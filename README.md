@@ -1,2 +1,0 @@
-# Spotity-
-Spotify version gratuit 
