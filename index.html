@@ -995,10 +995,6 @@ input[type="range"]::-webkit-slider-thumb{
 
 <div class="app">
 
-    <!-- =====================================================
-         SIDEBAR
-    ====================================================== -->
-
     <aside class="sidebar">
 
         <div class="logo">
@@ -1081,11 +1077,6 @@ input[type="range"]::-webkit-slider-thumb{
 
     </aside>
 
-
-    <!-- =====================================================
-         MAIN
-    ====================================================== -->
-
     <main class="main" id="main">
 
         <div class="topbar">
@@ -1108,9 +1099,6 @@ input[type="range"]::-webkit-slider-thumb{
 
         </div>
 
-
-        <!-- HOME -->
-
         <section
             class="view active"
             id="home-view">
@@ -1120,6 +1108,7 @@ input[type="range"]::-webkit-slider-thumb{
                 <div class="section-header">
 
                     <div>
+
                         <div class="section-title">
                             Mes Playlists
                         </div>
@@ -1127,6 +1116,7 @@ input[type="range"]::-webkit-slider-thumb{
                         <div class="section-subtitle">
                             Tes playlists personnelles
                         </div>
+
                     </div>
 
                 </div>
@@ -1140,9 +1130,6 @@ input[type="range"]::-webkit-slider-thumb{
 
         </section>
 
-
-        <!-- LIBRARY -->
-
         <section
             class="view"
             id="library-view">
@@ -1152,6 +1139,7 @@ input[type="range"]::-webkit-slider-thumb{
                 <div class="section-header">
 
                     <div>
+
                         <div class="section-title">
                             Titres aimés
                         </div>
@@ -1159,6 +1147,7 @@ input[type="range"]::-webkit-slider-thumb{
                         <div class="section-subtitle">
                             Tes musiques favorites
                         </div>
+
                     </div>
 
                 </div>
@@ -1172,23 +1161,14 @@ input[type="range"]::-webkit-slider-thumb{
 
         </section>
 
-
-        <!-- PLAYLIST DYNAMIQUE -->
-
         <section
             class="view"
             id="playlist-view">
-
         </section>
 
     </main>
 
 </div>
-
-
-<!-- =========================================================
-     PLAYER
-========================================================= -->
 
 <footer class="player">
 
@@ -1227,7 +1207,6 @@ input[type="range"]::-webkit-slider-thumb{
 
     </div>
 
-
     <div class="player-center">
 
         <div class="controls">
@@ -1242,7 +1221,6 @@ input[type="range"]::-webkit-slider-thumb{
 
             </button>
 
-
             <button
                 class="control"
                 id="prev-btn">
@@ -1252,7 +1230,6 @@ input[type="range"]::-webkit-slider-thumb{
                 </svg>
 
             </button>
-
 
             <button
                 class="main-play"
@@ -1268,7 +1245,6 @@ input[type="range"]::-webkit-slider-thumb{
 
             </button>
 
-
             <button
                 class="control"
                 id="next-btn">
@@ -1278,7 +1254,6 @@ input[type="range"]::-webkit-slider-thumb{
                 </svg>
 
             </button>
-
 
             <button
                 class="control"
@@ -1292,7 +1267,6 @@ input[type="range"]::-webkit-slider-thumb{
 
         </div>
 
-
         <div class="progress">
 
             <span id="current-time">
@@ -1303,7 +1277,7 @@ input[type="range"]::-webkit-slider-thumb{
                 type="range"
                 id="progress"
                 min="0"
-                max="100"
+                max="0"
                 value="0"
                 step="0.1">
 
@@ -1314,7 +1288,6 @@ input[type="range"]::-webkit-slider-thumb{
         </div>
 
     </div>
-
 
     <div class="player-right">
 
@@ -1331,17 +1304,11 @@ input[type="range"]::-webkit-slider-thumb{
 
 </footer>
 
-
 <audio
     id="audio"
-    preload="metadata"
+    preload="auto"
     playsinline>
 </audio>
-
-
-<!-- =========================================================
-     MODAL CREATION PLAYLIST
-========================================================= -->
 
 <div
     class="modal"
@@ -1404,7 +1371,6 @@ input[type="range"]::-webkit-slider-thumb{
 
 </div>
 
-
 <script>
 
 /* =========================================================
@@ -1412,7 +1378,8 @@ input[type="range"]::-webkit-slider-thumb{
 ========================================================= */
 
 const DB_NAME = "SpotityDatabase";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+
 const STORE_SONGS = "songs";
 const STORE_PLAYLISTS = "playlists";
 
@@ -1432,17 +1399,41 @@ let favorites = [];
 let currentPlaylist = null;
 let currentSongIndex = -1;
 
+/*
+    File de lecture réelle.
+
+    En mode normal :
+    [0,1,2,3,4]
+
+    En shuffle :
+    [3,0,4,1,2]
+
+    Cela permet d'avoir un vrai ordre aléatoire
+    et d'éviter de rejouer plusieurs fois le même morceau.
+*/
+let playQueue = [];
+let queuePosition = -1;
+
 let shuffle = false;
 let repeat = "off";
 
 let currentObjectURL = null;
+
+/*
+    URL du prochain morceau préchargé.
+*/
+let nextPreloadURL = null;
+let nextPreloadSongId = null;
+
+let preloadAudio = null;
 
 
 /* =========================================================
    ELEMENTS
 ========================================================= */
 
-const audio = document.getElementById("audio");
+const audio =
+    document.getElementById("audio");
 
 const playerCover =
     document.getElementById("player-cover");
@@ -1481,30 +1472,48 @@ function openDatabase(){
     return new Promise((resolve,reject)=>{
 
         const request =
-            indexedDB.open(DB_NAME,DB_VERSION);
+            indexedDB.open(
+                DB_NAME,
+                DB_VERSION
+            );
 
-        request.onupgradeneeded = e => {
+        request.onupgradeneeded = event => {
 
-            const database = e.target.result;
+            const database =
+                event.target.result;
 
-            if(!database.objectStoreNames.contains(STORE_SONGS)){
+            if(
+                !database.objectStoreNames.contains(
+                    STORE_SONGS
+                )
+            ){
+
                 database.createObjectStore(
                     STORE_SONGS,
                     {keyPath:"id"}
                 );
+
             }
 
-            if(!database.objectStoreNames.contains(STORE_PLAYLISTS)){
+            if(
+                !database.objectStoreNames.contains(
+                    STORE_PLAYLISTS
+                )
+            ){
+
                 database.createObjectStore(
                     STORE_PLAYLISTS,
                     {keyPath:"id"}
                 );
+
             }
+
         };
 
-        request.onsuccess = e => {
+        request.onsuccess = event => {
 
-            db = e.target.result;
+            db =
+                event.target.result;
 
             resolve(db);
 
@@ -1512,7 +1521,9 @@ function openDatabase(){
 
         request.onerror = () => {
 
-            reject(request.error);
+            reject(
+                request.error
+            );
 
         };
 
@@ -1525,85 +1536,133 @@ function openDatabase(){
    DB HELPERS
 ========================================================= */
 
-function dbPut(storeName,data){
+function dbPut(
+    storeName,
+    data
+){
 
-    return new Promise((resolve,reject)=>{
+    return new Promise(
+        (resolve,reject)=>{
 
-        const tx =
-            db.transaction(storeName,"readwrite");
+            const tx =
+                db.transaction(
+                    storeName,
+                    "readwrite"
+                );
 
-        const store =
-            tx.objectStore(storeName);
+            tx.objectStore(
+                storeName
+            ).put(data);
 
-        store.put(data);
+            tx.oncomplete =
+                () => resolve();
 
-        tx.oncomplete = () => resolve();
+            tx.onerror =
+                () => reject(tx.error);
 
-        tx.onerror = () => reject(tx.error);
-
-    });
-
-}
-
-
-function dbGet(storeName,id){
-
-    return new Promise((resolve,reject)=>{
-
-        const tx =
-            db.transaction(storeName,"readonly");
-
-        const request =
-            tx.objectStore(storeName).get(id);
-
-        request.onsuccess =
-            () => resolve(request.result);
-
-        request.onerror =
-            () => reject(request.error);
-
-    });
+        }
+    );
 
 }
 
 
-function dbDelete(storeName,id){
+function dbGet(
+    storeName,
+    id
+){
 
-    return new Promise((resolve,reject)=>{
+    return new Promise(
+        (resolve,reject)=>{
 
-        const tx =
-            db.transaction(storeName,"readwrite");
+            const tx =
+                db.transaction(
+                    storeName,
+                    "readonly"
+                );
 
-        tx.objectStore(storeName).delete(id);
+            const request =
+                tx.objectStore(
+                    storeName
+                ).get(id);
 
-        tx.oncomplete =
-            () => resolve();
+            request.onsuccess =
+                () => resolve(
+                    request.result
+                );
 
-        tx.onerror =
-            () => reject(tx.error);
+            request.onerror =
+                () => reject(
+                    request.error
+                );
 
-    });
+        }
+    );
 
 }
 
 
-function dbGetAll(storeName){
+function dbDelete(
+    storeName,
+    id
+){
 
-    return new Promise((resolve,reject)=>{
+    return new Promise(
+        (resolve,reject)=>{
 
-        const tx =
-            db.transaction(storeName,"readonly");
+            const tx =
+                db.transaction(
+                    storeName,
+                    "readwrite"
+                );
 
-        const request =
-            tx.objectStore(storeName).getAll();
+            tx.objectStore(
+                storeName
+            ).delete(id);
 
-        request.onsuccess =
-            () => resolve(request.result || []);
+            tx.oncomplete =
+                () => resolve();
 
-        request.onerror =
-            () => reject(request.error);
+            tx.onerror =
+                () => reject(
+                    tx.error
+                );
 
-    });
+        }
+    );
+
+}
+
+
+function dbGetAll(
+    storeName
+){
+
+    return new Promise(
+        (resolve,reject)=>{
+
+            const tx =
+                db.transaction(
+                    storeName,
+                    "readonly"
+                );
+
+            const request =
+                tx.objectStore(
+                    storeName
+                ).getAll();
+
+            request.onsuccess =
+                () => resolve(
+                    request.result || []
+                );
+
+            request.onerror =
+                () => reject(
+                    request.error
+                );
+
+        }
+    );
 
 }
 
@@ -1617,7 +1676,9 @@ function loadFavorites(){
     try{
 
         return JSON.parse(
-            localStorage.getItem(STORAGE_FAVORITES)
+            localStorage.getItem(
+                STORAGE_FAVORITES
+            )
         ) || [];
 
     }catch{
@@ -1644,19 +1705,26 @@ function loadProfile(){
     try{
 
         return JSON.parse(
-            localStorage.getItem(STORAGE_PROFILE)
-        ) || {name:"Utilisateur"};
+            localStorage.getItem(
+                STORAGE_PROFILE
+            )
+        ) || {
+            name:"Utilisateur"
+        };
 
     }catch{
 
-        return {name:"Utilisateur"};
+        return {
+            name:"Utilisateur"
+        };
 
     }
 
 }
 
 
-const profile = loadProfile();
+const profile =
+    loadProfile();
 
 
 /* =========================================================
@@ -1666,11 +1734,17 @@ const profile = loadProfile();
 function defaultCover(title){
 
     const safeTitle =
-        String(title || "Music")
+        String(
+            title || "Music"
+        )
         .substring(0,18)
-        .replace(/[<>&]/g,"");
+        .replace(
+            /[<>&]/g,
+            ""
+        );
 
     const svg = `
+
     <svg xmlns="http://www.w3.org/2000/svg"
          viewBox="0 0 300 300">
 
@@ -1721,8 +1795,49 @@ function defaultCover(title){
 
     </svg>`;
 
-    return "data:image/svg+xml;charset=utf-8,"+
-        encodeURIComponent(svg);
+    return (
+        "data:image/svg+xml;charset=utf-8," +
+        encodeURIComponent(svg)
+    );
+
+}
+
+
+/* =========================================================
+   FILE / BLOB -> DATA URL
+========================================================= */
+
+function blobToDataURL(blob){
+
+    return new Promise(
+        (resolve,reject)=>{
+
+            const reader =
+                new FileReader();
+
+            reader.onload =
+                () => resolve(
+                    reader.result
+                );
+
+            reader.onerror =
+                () => reject(
+                    reader.error
+                );
+
+            reader.readAsDataURL(
+                blob
+            );
+
+        }
+    );
+
+}
+
+
+function fileToDataURL(file){
+
+    return blobToDataURL(file);
 
 }
 
@@ -1731,34 +1846,42 @@ function defaultCover(title){
    EXTRACTION POCHETTE MP3
 ========================================================= */
 
-/*
-   Cette fonction lit les tags ID3 du MP3 et cherche
-   l'image APIC intégrée dans le fichier.
-*/
-
 async function extractMP3Cover(file){
 
     try{
 
         if(
             !file.type.includes("mpeg") &&
-            !file.name.toLowerCase().endsWith(".mp3")
+            !file.name
+                .toLowerCase()
+                .endsWith(".mp3")
         ){
+
             return null;
+
         }
 
         const buffer =
-            await file.slice(0,5 * 1024 * 1024).arrayBuffer();
+            await file
+                .slice(
+                    0,
+                    5 * 1024 * 1024
+                )
+                .arrayBuffer();
 
         const bytes =
-            new Uint8Array(buffer);
+            new Uint8Array(
+                buffer
+            );
 
         if(
             bytes[0] !== 0x49 ||
             bytes[1] !== 0x44 ||
             bytes[2] !== 0x33
         ){
+
             return null;
+
         }
 
         const version =
@@ -1780,38 +1903,49 @@ async function extractMP3Cover(file){
                 bytes.length
             );
 
-        while(pos + 10 < end){
+        while(
+            pos + 10 < end
+        ){
 
             const frameId =
                 String.fromCharCode(
                     bytes[pos],
-                    bytes[pos+1],
-                    bytes[pos+2],
-                    bytes[pos+3]
+                    bytes[pos + 1],
+                    bytes[pos + 2],
+                    bytes[pos + 3]
                 );
 
-            if(!/^[A-Z0-9]{4}$/.test(frameId)){
+            if(
+                !/^[A-Z0-9]{4}$/.test(
+                    frameId
+                )
+            ){
+
                 break;
+
             }
 
             let size;
 
-            if(version === 4){
+            if(
+                version === 4
+            ){
 
-                size = synchsafe(
-                    bytes[pos+4],
-                    bytes[pos+5],
-                    bytes[pos+6],
-                    bytes[pos+7]
-                );
+                size =
+                    synchsafe(
+                        bytes[pos + 4],
+                        bytes[pos + 5],
+                        bytes[pos + 6],
+                        bytes[pos + 7]
+                    );
 
             }else{
 
                 size =
-                    bytes[pos+4] * 16777216 +
-                    bytes[pos+5] * 65536 +
-                    bytes[pos+6] * 256 +
-                    bytes[pos+7];
+                    bytes[pos + 4] * 16777216 +
+                    bytes[pos + 5] * 65536 +
+                    bytes[pos + 6] * 256 +
+                    bytes[pos + 7];
 
             }
 
@@ -1821,8 +1955,12 @@ async function extractMP3Cover(file){
             const dataEnd =
                 dataStart + size;
 
-            if(dataEnd > end){
+            if(
+                dataEnd > end
+            ){
+
                 break;
+
             }
 
             if(
@@ -1837,10 +1975,27 @@ async function extractMP3Cover(file){
                     );
 
                 const cover =
-                    parseAPIC(frame);
+                    parseAPIC(
+                        frame
+                    );
 
                 if(cover){
+
+                    /*
+                        IMPORTANT :
+                        Avant cette version,
+                        parseAPIC retournait un blob:
+                        URL.createObjectURL(...)
+
+                        Ce type d'URL disparaît après
+                        fermeture/rechargement.
+
+                        Maintenant on retourne directement
+                        une Data URL persistante.
+                    */
+
                     return cover;
+
                 }
 
             }
@@ -1864,7 +2019,12 @@ async function extractMP3Cover(file){
 }
 
 
-function synchsafe(a,b,c,d){
+function synchsafe(
+    a,
+    b,
+    c,
+    d
+){
 
     return (
         ((a & 127) << 21) |
@@ -1891,31 +2051,46 @@ function parseAPIC(bytes){
             mimeEnd < bytes.length &&
             bytes[mimeEnd] !== 0
         ){
+
             mimeEnd++;
+
         }
 
         const mime =
-            new TextDecoder("ascii")
-            .decode(
-                bytes.slice(p,mimeEnd)
+            new TextDecoder(
+                "ascii"
+            ).decode(
+                bytes.slice(
+                    p,
+                    mimeEnd
+                )
             );
 
-        p = mimeEnd + 1;
+        p =
+            mimeEnd + 1;
 
-        if(p >= bytes.length){
+        if(
+            p >= bytes.length
+        ){
+
             return null;
+
         }
 
-        const pictureType =
-            bytes[p++];
+        p++;
 
-        if(encoding === 0 || encoding === 3){
+        if(
+            encoding === 0 ||
+            encoding === 3
+        ){
 
             while(
                 p < bytes.length &&
                 bytes[p] !== 0
             ){
+
                 p++;
+
             }
 
             p++;
@@ -1926,41 +2101,51 @@ function parseAPIC(bytes){
                 p + 1 < bytes.length &&
                 !(
                     bytes[p] === 0 &&
-                    bytes[p+1] === 0
+                    bytes[p + 1] === 0
                 )
             ){
+
                 p += 2;
+
             }
 
             p += 2;
 
         }
 
-        if(p >= bytes.length){
+        if(
+            p >= bytes.length
+        ){
+
             return null;
+
         }
 
         let dataStart = p;
 
-        /*
-           On cherche les octets d'image.
-        */
-
-        for(let i=p;i<bytes.length-2;i++){
+        for(
+            let i = p;
+            i < bytes.length - 2;
+            i++
+        ){
 
             const jpeg =
                 bytes[i] === 0xFF &&
-                bytes[i+1] === 0xD8 &&
-                bytes[i+2] === 0xFF;
+                bytes[i + 1] === 0xD8 &&
+                bytes[i + 2] === 0xFF;
 
             const png =
                 bytes[i] === 0x89 &&
-                bytes[i+1] === 0x50 &&
-                bytes[i+2] === 0x4E;
+                bytes[i + 1] === 0x50 &&
+                bytes[i + 2] === 0x4E;
 
-            if(jpeg || png){
+            if(
+                jpeg ||
+                png
+            ){
 
                 dataStart = i;
+
                 break;
 
             }
@@ -1968,40 +2153,67 @@ function parseAPIC(bytes){
         }
 
         const imageBytes =
-            bytes.slice(dataStart);
+            bytes.slice(
+                dataStart
+            );
 
-        if(!imageBytes.length){
+        if(
+            !imageBytes.length
+        ){
+
             return null;
+
         }
 
-        let type = mime;
+        let type =
+            mime;
 
         if(
             !type ||
             type === "image/jpg"
         ){
+
             if(
                 imageBytes[0] === 0xFF &&
                 imageBytes[1] === 0xD8
             ){
-                type = "image/jpeg";
+
+                type =
+                    "image/jpeg";
+
             }
+
         }
 
         if(
             imageBytes[0] === 0x89 &&
             imageBytes[1] === 0x50
         ){
-            type = "image/png";
+
+            type =
+                "image/png";
+
         }
 
         const blob =
             new Blob(
                 [imageBytes],
-                {type:type || "image/jpeg"}
+                {
+                    type:
+                        type ||
+                        "image/jpeg"
+                }
             );
 
-        return URL.createObjectURL(blob);
+        /*
+            CORRECTION IMPORTANTE :
+            on transforme immédiatement le Blob
+            en Data URL persistante.
+        */
+
+        return blobToDataURL(
+            blob
+        );
 
     }catch{
 
@@ -2013,49 +2225,22 @@ function parseAPIC(bytes){
 
 
 /* =========================================================
-   CONVERTIR IMAGE EN DATA URL
-========================================================= */
-
-function fileToDataURL(file){
-
-    return new Promise((resolve,reject)=>{
-
-        const reader =
-            new FileReader();
-
-        reader.onload =
-            () => resolve(reader.result);
-
-        reader.onerror =
-            () => reject(reader.error);
-
-        reader.readAsDataURL(file);
-
-    });
-
-}
-
-
-/* =========================================================
-   CHARGER LES PLAYLISTS
+   PLAYLISTS
 ========================================================= */
 
 async function loadPlaylists(){
 
-    const stored =
-        await dbGetAll(STORE_PLAYLISTS);
-
     playlists =
-        stored || [];
+        await dbGetAll(
+            STORE_PLAYLISTS
+        ) || [];
 
 }
 
 
-/* =========================================================
-   SAUVEGARDER PLAYLIST
-========================================================= */
-
-async function savePlaylist(playlist){
+async function savePlaylist(
+    playlist
+){
 
     await dbPut(
         STORE_PLAYLISTS,
@@ -2066,25 +2251,37 @@ async function savePlaylist(playlist){
 
 
 /* =========================================================
-   RENDU PLAYLISTS
+   RENDER PLAYLISTS
 ========================================================= */
 
 function renderPlaylists(){
 
     const grid =
-        document.getElementById("playlist-grid");
+        document.getElementById(
+            "playlist-grid"
+        );
 
     const side =
-        document.getElementById("sidebar-playlists");
+        document.getElementById(
+            "sidebar-playlists"
+        );
 
 
-    if(playlists.length === 0){
+    if(
+        playlists.length === 0
+    ){
 
         grid.innerHTML = `
+
             <div class="empty">
+
                 Aucune playlist.<br><br>
-                Crée ta première playlist avec le bouton ＋.
+
+                Crée ta première playlist
+                avec le bouton ＋.
+
             </div>
+
         `;
 
         side.innerHTML = "";
@@ -2095,119 +2292,157 @@ function renderPlaylists(){
 
 
     grid.innerHTML =
-        playlists.map(p => `
+        playlists
+        .map(
+            p => `
 
-        <div
-            class="playlist-card"
-            data-id="${p.id}">
+            <div
+                class="playlist-card"
+                data-id="${p.id}">
 
-            <img
-                class="playlist-card-cover"
-                src="${p.cover || defaultCover(p.name)}"
-                alt="">
+                <img
+                    class="playlist-card-cover"
+                    src="${
+                        p.cover ||
+                        defaultCover(p.name)
+                    }"
+                    alt="">
 
-            <h3>
-                ${escapeHTML(p.name)}
-            </h3>
+                <h3>
+                    ${escapeHTML(p.name)}
+                </h3>
 
-            <p>
-                ${p.songs.length} titre${p.songs.length > 1 ? "s":""}
-            </p>
+                <p>
+                    ${p.songs.length}
+                    titre${
+                        p.songs.length > 1
+                        ? "s"
+                        : ""
+                    }
+                </p>
 
-            <button
-                class="play-btn-card"
-                data-play="${p.id}">
+                <button
+                    class="play-btn-card"
+                    data-play="${p.id}">
 
-                <svg viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                </svg>
+                    <svg viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
 
-            </button>
+                </button>
 
-        </div>
+            </div>
 
-    `).join("");
+        `
+        )
+        .join("");
 
 
     side.innerHTML =
-        playlists.map(p => `
+        playlists
+        .map(
+            p => `
 
-        <li
-            class="playlist-sidebar-item"
-            data-id="${p.id}">
+            <li
+                class="playlist-sidebar-item"
+                data-id="${p.id}">
 
-            <img
-                src="${p.cover || defaultCover(p.name)}">
+                <img
+                    src="${
+                        p.cover ||
+                        defaultCover(p.name)
+                    }">
 
-            <span class="playlist-sidebar-name">
-                ${escapeHTML(p.name)}
-            </span>
+                <span
+                    class="playlist-sidebar-name">
 
-        </li>
+                    ${escapeHTML(p.name)}
 
-    `).join("");
+                </span>
+
+            </li>
+
+        `
+        )
+        .join("");
 
 
     document
-        .querySelectorAll(".playlist-card")
-        .forEach(card => {
+        .querySelectorAll(
+            ".playlist-card"
+        )
+        .forEach(
+            card => {
 
-            card.addEventListener(
-                "click",
-                e => {
+                card.addEventListener(
+                    "click",
+                    event => {
 
-                    if(
-                        e.target.closest(".play-btn-card")
-                    ){
-                        return;
+                        if(
+                            event.target.closest(
+                                ".play-btn-card"
+                            )
+                        ){
+
+                            return;
+
+                        }
+
+                        openPlaylist(
+                            card.dataset.id
+                        );
+
                     }
+                );
 
-                    openPlaylist(
-                        card.dataset.id
-                    );
-
-                }
-            );
-
-        });
+            }
+        );
 
 
     document
-        .querySelectorAll(".play-btn-card")
-        .forEach(btn => {
+        .querySelectorAll(
+            ".play-btn-card"
+        )
+        .forEach(
+            button => {
 
-            btn.addEventListener(
-                "click",
-                e => {
+                button.addEventListener(
+                    "click",
+                    event => {
 
-                    e.stopPropagation();
+                        event.stopPropagation();
 
-                    playPlaylist(
-                        btn.dataset.play
-                    );
+                        playPlaylist(
+                            button.dataset.play
+                        );
 
-                }
-            );
+                    }
+                );
 
-        });
+            }
+        );
 
 
     document
-        .querySelectorAll(".playlist-sidebar-item")
-        .forEach(item => {
+        .querySelectorAll(
+            ".playlist-sidebar-item"
+        )
+        .forEach(
+            item => {
 
-            item.addEventListener(
-                "click",
-                () => {
+                item.addEventListener(
+                    "click",
+                    () => {
 
-                    openPlaylist(
-                        item.dataset.id
-                    );
+                        openPlaylist(
+                            item.dataset.id
+                        );
 
-                }
-            );
+                    }
+                );
 
-        });
+            }
+        );
 
 }
 
@@ -2224,24 +2459,34 @@ function openPlaylist(id){
         );
 
     if(!playlist){
+
         return;
+
     }
+
 
     document
         .querySelectorAll(".view")
-        .forEach(v =>
+        .forEach(
+            v =>
             v.classList.remove("active")
         );
+
 
     document
         .querySelectorAll(".nav-item")
-        .forEach(v =>
+        .forEach(
+            v =>
             v.classList.remove("active")
         );
 
+
     document
-        .querySelectorAll(".playlist-sidebar-item")
-        .forEach(v =>
+        .querySelectorAll(
+            ".playlist-sidebar-item"
+        )
+        .forEach(
+            v =>
             v.classList.remove("active")
         );
 
@@ -2252,7 +2497,11 @@ function openPlaylist(id){
         );
 
     if(side){
-        side.classList.add("active");
+
+        side.classList.add(
+            "active"
+        );
+
     }
 
 
@@ -2261,7 +2510,9 @@ function openPlaylist(id){
             "playlist-view"
         );
 
-    view.classList.add("active");
+    view.classList.add(
+        "active"
+    );
 
 
     view.innerHTML = `
@@ -2272,41 +2523,69 @@ function openPlaylist(id){
 
                 <img
                     class="playlist-header-cover"
-                    src="${playlist.cover || defaultCover(playlist.name)}">
+                    src="${
+                        playlist.cover ||
+                        defaultCover(
+                            playlist.name
+                        )
+                    }">
 
-                <div class="playlist-header-info">
+                <div
+                    class="playlist-header-info">
 
-                    <div class="playlist-header-small">
+                    <div
+                        class="playlist-header-small">
+
                         Playlist
+
                     </div>
 
-                    <div class="playlist-header-title">
-                        ${escapeHTML(playlist.name)}
+                    <div
+                        class="playlist-header-title">
+
+                        ${escapeHTML(
+                            playlist.name
+                        )}
+
                     </div>
 
-                    <div class="playlist-header-description">
+                    <div
+                        class="playlist-header-description">
+
                         ${playlist.songs.length}
-                        titre${playlist.songs.length > 1 ? "s":""}
+                        titre${
+                            playlist.songs.length > 1
+                            ? "s"
+                            : ""
+                        }
+
                     </div>
 
-                    <div class="playlist-actions">
+                    <div
+                        class="playlist-actions">
 
                         <button
                             class="green-btn"
                             id="playlist-play">
+
                             ▶ Lire
+
                         </button>
 
                         <button
                             class="dark-btn"
                             id="playlist-image-btn">
+
                             🖼️ Changer l'image
+
                         </button>
 
                         <button
                             class="danger-btn"
                             id="playlist-delete">
+
                             Supprimer
+
                         </button>
 
                     </div>
@@ -2315,7 +2594,6 @@ function openPlaylist(id){
 
             </div>
 
-
             <div class="song-list">
 
                 ${
@@ -2323,16 +2601,24 @@ function openPlaylist(id){
 
                     ?
 
-                    `<div class="empty">
+                    `
+                    <div class="empty">
                         Cette playlist est vide.
-                    </div>`
+                    </div>
+                    `
 
                     :
 
-                    playlist.songs.map(
+                    playlist.songs
+                    .map(
                         (song,index) =>
-                        songHTML(song,index)
-                    ).join("")
+                            songHTML(
+                                song,
+                                index
+                            )
+                    )
+                    .join("")
+
                 }
 
             </div>
@@ -2343,75 +2629,95 @@ function openPlaylist(id){
 
 
     document
-        .getElementById("playlist-play")
+        .getElementById(
+            "playlist-play"
+        )
         .addEventListener(
             "click",
-            () => playPlaylist(id)
+            () =>
+                playPlaylist(id)
         );
 
 
     document
-        .getElementById("playlist-delete")
+        .getElementById(
+            "playlist-delete"
+        )
         .addEventListener(
             "click",
-            () => deletePlaylist(id)
+            () =>
+                deletePlaylist(id)
         );
 
 
     document
-        .getElementById("playlist-image-btn")
+        .getElementById(
+            "playlist-image-btn"
+        )
         .addEventListener(
             "click",
-            () => changePlaylistImage(id)
+            () =>
+                changePlaylistImage(id)
         );
 
 
     view
-        .querySelectorAll(".song")
-        .forEach(el => {
+        .querySelectorAll(
+            ".song"
+        )
+        .forEach(
+            element => {
 
-            el.addEventListener(
-                "click",
-                e => {
+                element.addEventListener(
+                    "click",
+                    event => {
 
-                    if(
-                        e.target.closest(".song-heart")
-                    ){
-                        return;
+                        if(
+                            event.target.closest(
+                                ".song-heart"
+                            )
+                        ){
+
+                            return;
+
+                        }
+
+                        playSong(
+                            playlist,
+                            Number(
+                                element.dataset.index
+                            )
+                        );
+
                     }
+                );
 
-                    const index =
-                        Number(el.dataset.index);
-
-                    playSong(
-                        playlist,
-                        index
-                    );
-
-                }
-            );
-
-        });
+            }
+        );
 
 
     view
-        .querySelectorAll(".song-heart")
-        .forEach(btn => {
+        .querySelectorAll(
+            ".song-heart"
+        )
+        .forEach(
+            button => {
 
-            btn.addEventListener(
-                "click",
-                e => {
+                button.addEventListener(
+                    "click",
+                    event => {
 
-                    e.stopPropagation();
+                        event.stopPropagation();
 
-                    toggleFavorite(
-                        btn.dataset.song
-                    );
+                        toggleFavorite(
+                            button.dataset.song
+                        );
 
-                }
-            );
+                    }
+                );
 
-        });
+            }
+        );
 
 }
 
@@ -2420,7 +2726,10 @@ function openPlaylist(id){
    SONG HTML
 ========================================================= */
 
-function songHTML(song,index){
+function songHTML(
+    song,
+    index
+){
 
     return `
 
@@ -2429,22 +2738,32 @@ function songHTML(song,index){
             data-index="${index}">
 
             <div class="song-number">
-                ${index+1}
+                ${index + 1}
             </div>
 
             <img
                 class="song-cover"
-                src="${song.cover || defaultCover(song.title)}"
+                src="${
+                    song.cover ||
+                    defaultCover(
+                        song.title
+                    )
+                }"
                 alt="">
 
             <div class="song-info">
 
                 <div class="song-title">
-                    ${escapeHTML(song.title)}
+                    ${escapeHTML(
+                        song.title
+                    )}
                 </div>
 
                 <div class="song-artist">
-                    ${escapeHTML(song.artist || "Artiste inconnu")}
+                    ${escapeHTML(
+                        song.artist ||
+                        "Artiste inconnu"
+                    )}
                 </div>
 
             </div>
@@ -2464,7 +2783,9 @@ function songHTML(song,index){
             </button>
 
             <div class="song-duration">
+
                 ${song.duration || "0:00"}
+
             </div>
 
         </div>
@@ -2475,7 +2796,97 @@ function songHTML(song,index){
 
 
 /* =========================================================
-   JOUER PLAYLIST
+   CONSTRUIRE FILE DE LECTURE
+========================================================= */
+
+function buildPlayQueue(
+    playlist,
+    startIndex
+){
+
+    const length =
+        playlist.songs.length;
+
+    if(!length){
+
+        playQueue = [];
+        queuePosition = -1;
+
+        return;
+
+    }
+
+
+    if(!shuffle){
+
+        playQueue =
+            Array.from(
+                {length},
+                (_,i) => i
+            );
+
+        queuePosition =
+            startIndex;
+
+        return;
+
+    }
+
+
+    /*
+        Vrai shuffle :
+
+        Le morceau demandé est toujours
+        le premier de la file.
+
+        Tous les autres morceaux sont
+        mélangés une seule fois.
+    */
+
+    const others =
+        Array.from(
+            {length},
+            (_,i) => i
+        ).filter(
+            i => i !== startIndex
+        );
+
+
+    for(
+        let i = others.length - 1;
+        i > 0;
+        i--
+    ){
+
+        const j =
+            Math.floor(
+                Math.random() * (i + 1)
+            );
+
+        [
+            others[i],
+            others[j]
+        ] =
+        [
+            others[j],
+            others[i]
+        ];
+
+    }
+
+
+    playQueue = [
+        startIndex,
+        ...others
+    ];
+
+    queuePosition = 0;
+
+}
+
+
+/* =========================================================
+   PLAYLIST
 ========================================================= */
 
 function playPlaylist(id){
@@ -2487,15 +2898,194 @@ function playPlaylist(id){
 
     if(
         !playlist ||
-        playlist.songs.length === 0
+        !playlist.songs.length
     ){
+
         return;
+
     }
 
-    playSong(
+
+    buildPlayQueue(
         playlist,
         0
     );
+
+
+    playSong(
+        playlist,
+        0,
+        true
+    );
+
+}
+
+
+/* =========================================================
+   PRELOAD SUIVANT
+========================================================= */
+
+async function preloadNextSong(){
+
+    clearNextPreload();
+
+
+    if(
+        !currentPlaylist ||
+        !playQueue.length
+    ){
+
+        return;
+
+    }
+
+
+    const nextPosition =
+        queuePosition + 1;
+
+
+    if(
+        nextPosition >=
+        playQueue.length
+    ){
+
+        if(
+            repeat !== "all"
+        ){
+
+            return;
+
+        }
+
+        /*
+            En repeat all, on prépare le premier.
+        */
+
+    }
+
+
+    const actualPosition =
+        nextPosition >= playQueue.length
+        ? 0
+        : nextPosition;
+
+
+    const nextIndex =
+        playQueue[
+            actualPosition
+        ];
+
+
+    const song =
+        currentPlaylist.songs[
+            nextIndex
+        ];
+
+
+    if(!song){
+
+        return;
+
+    }
+
+
+    try{
+
+        const stored =
+            await dbGet(
+                STORE_SONGS,
+                song.id
+            );
+
+        if(
+            !stored ||
+            !stored.blob
+        ){
+
+            return;
+
+        }
+
+
+        nextPreloadURL =
+            URL.createObjectURL(
+                stored.blob
+            );
+
+        nextPreloadSongId =
+            song.id;
+
+
+        /*
+            Audio séparé uniquement pour le
+            préchargement.
+
+            Il ne joue pas.
+        */
+
+        preloadAudio =
+            new Audio();
+
+        preloadAudio.preload =
+            "auto";
+
+        preloadAudio.src =
+            nextPreloadURL;
+
+        preloadAudio.load();
+
+    }catch(error){
+
+        console.warn(
+            "Préchargement impossible:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   NETTOYER PRELOAD
+========================================================= */
+
+function clearNextPreload(){
+
+    if(
+        preloadAudio
+    ){
+
+        try{
+
+            preloadAudio.pause();
+
+        }catch{}
+
+        preloadAudio.src = "";
+
+        preloadAudio =
+            null;
+
+    }
+
+
+    if(
+        nextPreloadURL
+    ){
+
+        URL.revokeObjectURL(
+            nextPreloadURL
+        );
+
+        nextPreloadURL =
+            null;
+
+    }
+
+
+    nextPreloadSongId =
+        null;
 
 }
 
@@ -2506,46 +3096,63 @@ function playPlaylist(id){
 
 async function playSong(
     playlist,
-    index
+    index,
+    rebuildQueue = true
 ){
 
     if(
         !playlist ||
         !playlist.songs[index]
     ){
+
         return;
+
     }
 
 
     currentPlaylist =
         playlist;
 
+
+    /*
+        Si on clique directement sur un morceau,
+        on reconstruit la file.
+
+        Si nextSong() appelle playSong(),
+        on conserve la file existante.
+    */
+
+    if(
+        rebuildQueue ||
+        !playQueue.length
+    ){
+
+        buildPlayQueue(
+            playlist,
+            index
+        );
+
+    }else{
+
+        queuePosition =
+            playQueue.indexOf(
+                index
+            );
+
+    }
+
+
     currentSongIndex =
         index;
 
 
     const song =
-        playlist.songs[index];
+        playlist.songs[
+            index
+        ];
 
 
     try{
-
-        if(currentObjectURL){
-
-            URL.revokeObjectURL(
-                currentObjectURL
-            );
-
-            currentObjectURL = null;
-
-        }
-
-
-        /*
-           On récupère le vrai fichier depuis IndexedDB.
-           C'est LA correction principale du problème
-           "ça marche puis ça disparaît après fermeture".
-        */
 
         const stored =
             await dbGet(
@@ -2568,6 +3175,27 @@ async function playSong(
         }
 
 
+        clearNextPreload();
+
+
+        /*
+            Si l'URL actuelle existe, on la libère.
+        */
+
+        if(
+            currentObjectURL
+        ){
+
+            URL.revokeObjectURL(
+                currentObjectURL
+            );
+
+            currentObjectURL =
+                null;
+
+        }
+
+
         currentObjectURL =
             URL.createObjectURL(
                 stored.blob
@@ -2577,6 +3205,9 @@ async function playSong(
         audio.src =
             currentObjectURL;
 
+        audio.preload =
+            "auto";
+
         audio.load();
 
 
@@ -2585,11 +3216,10 @@ async function playSong(
         );
 
 
-        /*
-           IMPORTANT :
-           play() est appelé directement dans la chaîne
-           de l'action utilisateur.
-        */
+        setupMediaSession(
+            song
+        );
+
 
         try{
 
@@ -2605,11 +3235,17 @@ async function playSong(
         }
 
 
-        setupMediaSession(song);
+        /*
+            On prépare immédiatement le suivant.
+        */
+
+        preloadNextSong();
 
     }catch(error){
 
-        console.error(error);
+        console.error(
+            error
+        );
 
         alert(
             "Impossible de lire cette musique."
@@ -2624,25 +3260,33 @@ async function playSong(
    PLAYER
 ========================================================= */
 
-function updatePlayer(song){
+function updatePlayer(
+    song
+){
 
     playerTitle.textContent =
-        song.title || "Sans titre";
+        song.title ||
+        "Sans titre";
 
     playerArtist.textContent =
-        song.artist || "Artiste inconnu";
+        song.artist ||
+        "Artiste inconnu";
 
 
     playerCover.src =
         song.cover ||
-        defaultCover(song.title);
+        defaultCover(
+            song.title
+        );
 
 
     playerCover.onerror =
         () => {
 
             playerCover.src =
-                defaultCover(song.title);
+                defaultCover(
+                    song.title
+                );
 
         };
 
@@ -2652,29 +3296,43 @@ function updatePlayer(song){
 }
 
 
+/* =========================================================
+   HEART
+========================================================= */
+
 function updateHeart(){
 
     if(!currentPlaylist){
+
         return;
+
     }
+
 
     const song =
         currentPlaylist.songs[
             currentSongIndex
         ];
 
+
     if(!song){
+
         return;
+
     }
+
 
     const heart =
         document.getElementById(
             "player-heart"
         );
 
+
     heart.classList.toggle(
         "active",
-        isFavorite(song.id)
+        isFavorite(
+            song.id
+        )
     );
 
 }
@@ -2686,9 +3344,13 @@ function updateHeart(){
 
 function togglePlay(){
 
-    if(!audio.src){
+    if(
+        !audio.src
+    ){
 
-        if(playlists.length){
+        if(
+            playlists.length
+        ){
 
             playPlaylist(
                 playlists[0].id
@@ -2701,10 +3363,15 @@ function togglePlay(){
     }
 
 
-    if(audio.paused){
+    if(
+        audio.paused
+    ){
 
-        audio.play()
-            .catch(console.error);
+        audio
+            .play()
+            .catch(
+                console.error
+            );
 
     }else{
 
@@ -2720,7 +3387,25 @@ audio.addEventListener(
     () => {
 
         playIcon.innerHTML =
-            `<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>`;
+            `
+            <path d="
+                M6 5h4v14H6z
+                M14 5h4v14h-4z
+            "/>
+            `;
+
+        if(
+            "mediaSession" in navigator
+        ){
+
+            try{
+
+                navigator.mediaSession.playbackState =
+                    "playing";
+
+            }catch{}
+
+        }
 
     }
 );
@@ -2731,7 +3416,24 @@ audio.addEventListener(
     () => {
 
         playIcon.innerHTML =
-            `<path d="M8 5v14l11-7z"/>`;
+            `
+            <path d="
+                M8 5v14l11-7z
+            "/>
+            `;
+
+        if(
+            "mediaSession" in navigator
+        ){
+
+            try{
+
+                navigator.mediaSession.playbackState =
+                    "paused";
+
+            }catch{}
+
+        }
 
     }
 );
@@ -2747,67 +3449,64 @@ function nextSong(){
         !currentPlaylist ||
         !currentPlaylist.songs.length
     ){
+
         return;
+
     }
 
 
-    let next;
+    if(
+        !playQueue.length
+    ){
+
+        buildPlayQueue(
+            currentPlaylist,
+            currentSongIndex
+        );
+
+    }
 
 
-    if(shuffle){
+    let nextPosition =
+        queuePosition + 1;
+
+
+    if(
+        nextPosition >=
+        playQueue.length
+    ){
 
         if(
-            currentPlaylist.songs.length === 1
+            repeat === "all"
         ){
 
-            next = 0;
+            nextPosition = 0;
 
         }else{
 
-            do{
+            audio.pause();
 
-                next =
-                    Math.floor(
-                        Math.random() *
-                        currentPlaylist.songs.length
-                    );
-
-            }while(
-                next === currentSongIndex
-            );
-
-        }
-
-    }else{
-
-        next =
-            currentSongIndex + 1;
-
-        if(
-            next >=
-            currentPlaylist.songs.length
-        ){
-
-            if(repeat === "all"){
-
-                next = 0;
-
-            }else{
-
-                audio.pause();
-
-                return;
-
-            }
+            return;
 
         }
 
     }
+
+
+    const nextIndex =
+        playQueue[
+            nextPosition
+        ];
+
+
+    queuePosition =
+        nextPosition;
 
 
     playSong(
         currentPlaylist,
-        next
+        nextIndex,
+        false
     );
 
 }
@@ -2823,42 +3522,77 @@ function previousSong(){
         !currentPlaylist ||
         !currentPlaylist.songs.length
     ){
-        return;
-    }
-
-
-    if(audio.currentTime > 3){
-
-        audio.currentTime = 0;
 
         return;
 
     }
 
 
-    let prev =
-        currentSongIndex - 1;
+    if(
+        audio.currentTime > 3
+    ){
+
+        audio.currentTime =
+            0;
+
+        updateMediaPosition();
+
+        return;
+
+    }
 
 
-    if(prev < 0){
+    if(
+        !playQueue.length
+    ){
 
-        if(repeat === "all"){
+        buildPlayQueue(
+            currentPlaylist,
+            currentSongIndex
+        );
 
-            prev =
-                currentPlaylist.songs.length - 1;
+    }
+
+
+    let previousPosition =
+        queuePosition - 1;
+
+
+    if(
+        previousPosition < 0
+    ){
+
+        if(
+            repeat === "all"
+        ){
+
+            previousPosition =
+                playQueue.length - 1;
 
         }else{
 
-            prev = 0;
+            previousPosition =
+                0;
 
         }
 
     }
 
 
+    const previousIndex =
+        playQueue[
+            previousPosition
+        ];
+
+
+    queuePosition =
+        previousPosition;
+
+
     playSong(
         currentPlaylist,
-        prev
+        previousIndex,
+        false
     );
 
 }
@@ -2872,18 +3606,30 @@ audio.addEventListener(
     "ended",
     () => {
 
-        if(repeat === "one"){
+        /*
+            Pas de setTimeout.
+            On enchaîne directement.
+        */
 
-            audio.currentTime = 0;
+        if(
+            repeat === "one"
+        ){
 
-            audio.play()
-                .catch(console.error);
+            audio.currentTime =
+                0;
 
-        }else{
+            audio
+                .play()
+                .catch(
+                    console.error
+                );
 
-            nextSong();
+            return;
 
         }
+
+
+        nextSong();
 
     }
 );
@@ -2893,21 +3639,16 @@ audio.addEventListener(
    MEDIA SESSION
 ========================================================= */
 
-/*
-   C'est ce qui permet à l'iPhone / AirPods / écran verrouillé
-   de comprendre :
-
-   précédent
-   lecture/pause
-   suivant
-*/
-
-function setupMediaSession(song){
+function setupMediaSession(
+    song
+){
 
     if(
         !("mediaSession" in navigator)
     ){
+
         return;
+
     }
 
 
@@ -2932,11 +3673,17 @@ function setupMediaSession(song){
                     {
                         src:
                             song.cover ||
-                            defaultCover(song.title),
+                            defaultCover(
+                                song.title
+                            ),
 
-                        sizes:"512x512",
+                        sizes:
+                            "512x512",
 
-                        type:"image/jpeg"
+                        type:
+                            getImageMimeType(
+                                song.cover
+                            )
                     }
                 ]
 
@@ -2947,8 +3694,11 @@ function setupMediaSession(song){
             "play",
             () => {
 
-                audio.play()
-                    .catch(console.error);
+                audio
+                    .play()
+                    .catch(
+                        console.error
+                    );
 
             }
         );
@@ -2984,34 +3734,109 @@ function setupMediaSession(song){
         );
 
 
-        navigator.mediaSession.setActionHandler(
-            "seekbackward",
-            details => {
-
-                audio.currentTime =
-                    Math.max(
-                        0,
-                        audio.currentTime -
-                        (details.seekOffset || 10)
-                    );
-
-            }
-        );
-
+        /*
+            Avance de 10 secondes.
+        */
 
         navigator.mediaSession.setActionHandler(
             "seekforward",
             details => {
 
+                const offset =
+                    details.seekOffset ||
+                    10;
+
                 audio.currentTime =
                     Math.min(
                         audio.duration || Infinity,
                         audio.currentTime +
-                        (details.seekOffset || 10)
+                        offset
                     );
+
+                updateMediaPosition();
 
             }
         );
+
+
+        /*
+            Recul de 10 secondes.
+        */
+
+        navigator.mediaSession.setActionHandler(
+            "seekbackward",
+            details => {
+
+                const offset =
+                    details.seekOffset ||
+                    10;
+
+                audio.currentTime =
+                    Math.max(
+                        0,
+                        audio.currentTime -
+                        offset
+                    );
+
+                updateMediaPosition();
+
+            }
+        );
+
+
+        /*
+            IMPORTANT :
+            C'est cette action qui permet au petit
+            lecteur iPhone de déplacer directement
+            la barre de progression.
+        */
+
+        try{
+
+            navigator.mediaSession.setActionHandler(
+                "seekto",
+                details => {
+
+                    if(
+                        typeof details.seekTime !==
+                        "number"
+                    ){
+
+                        return;
+
+                    }
+
+
+                    if(
+                        details.fastSeek &&
+                        "fastSeek" in audio
+                    ){
+
+                        audio.fastSeek(
+                            details.seekTime
+                        );
+
+                    }else{
+
+                        audio.currentTime =
+                            details.seekTime;
+
+                    }
+
+
+                    updateMediaPosition();
+
+                }
+            );
+
+        }catch(error){
+
+            console.warn(
+                "seekto non disponible:",
+                error
+            );
+
+        }
 
 
     }catch(error){
@@ -3027,19 +3852,162 @@ function setupMediaSession(song){
 
 
 /* =========================================================
-   FAVORIS
+   MEDIA POSITION
 ========================================================= */
 
-function isFavorite(id){
+function updateMediaPosition(){
 
-    return favorites.includes(id);
+    if(
+        !("mediaSession" in navigator)
+    ){
+
+        return;
+
+    }
+
+
+    if(
+        !isFinite(audio.duration) ||
+        audio.duration <= 0
+    ){
+
+        return;
+
+    }
+
+
+    try{
+
+        if(
+            "setPositionState" in
+            navigator.mediaSession
+        ){
+
+            navigator.mediaSession
+                .setPositionState({
+
+                    duration:
+                        audio.duration,
+
+                    playbackRate:
+                        audio.playbackRate || 1,
+
+                    position:
+                        Math.min(
+                            audio.currentTime,
+                            audio.duration
+                        )
+
+                });
+
+        }
+
+    }catch{}
 
 }
 
 
-function toggleFavorite(id){
+/* =========================================================
+   MEDIA SESSION POSITION UPDATE
+========================================================= */
 
-    if(isFavorite(id)){
+audio.addEventListener(
+    "timeupdate",
+    () => {
+
+        updateMediaPosition();
+
+    }
+);
+
+
+audio.addEventListener(
+    "ratechange",
+    () => {
+
+        updateMediaPosition();
+
+    }
+);
+
+
+/* =========================================================
+   TYPE IMAGE
+========================================================= */
+
+function getImageMimeType(
+    src
+){
+
+    if(
+        typeof src !== "string"
+    ){
+
+        return "image/jpeg";
+
+    }
+
+
+    if(
+        src.startsWith(
+            "data:image/png"
+        )
+    ){
+
+        return "image/png";
+
+    }
+
+
+    if(
+        src.startsWith(
+            "data:image/webp"
+        )
+    ){
+
+        return "image/webp";
+
+    }
+
+
+    if(
+        src.startsWith(
+            "data:image/gif"
+        )
+    ){
+
+        return "image/gif";
+
+    }
+
+
+    return "image/jpeg";
+
+}
+
+
+/* =========================================================
+   FAVORIS
+========================================================= */
+
+function isFavorite(
+    id
+){
+
+    return favorites.includes(
+        id
+    );
+
+}
+
+
+function toggleFavorite(
+    id
+){
+
+    if(
+        isFavorite(id)
+    ){
 
         favorites =
             favorites.filter(
@@ -3048,7 +4016,9 @@ function toggleFavorite(id){
 
     }else{
 
-        favorites.push(id);
+        favorites.push(
+            id
+        );
 
     }
 
@@ -3075,19 +4045,30 @@ function renderLibrary(){
 
 
     const songs =
-        playlists.flatMap(
+        playlists
+        .flatMap(
             p => p.songs
-        ).filter(
-            song => isFavorite(song.id)
+        )
+        .filter(
+            song =>
+                isFavorite(
+                    song.id
+                )
         );
 
 
-    if(!songs.length){
+    if(
+        !songs.length
+    ){
 
         container.innerHTML = `
+
             <div class="empty">
+
                 Aucun titre aimé.
+
             </div>
+
         `;
 
         return;
@@ -3096,23 +4077,27 @@ function renderLibrary(){
 
 
     container.innerHTML =
-        songs.map(
+        songs
+        .map(
             song => {
 
                 const playlist =
                     playlists.find(
                         p =>
-                        p.songs.some(
-                            s =>
-                            s.id === song.id
-                        )
+                            p.songs.some(
+                                s =>
+                                    s.id ===
+                                    song.id
+                            )
                     );
+
 
                 const index =
                     playlist
                     ? playlist.songs.findIndex(
                         s =>
-                        s.id === song.id
+                            s.id ===
+                            song.id
                     )
                     : -1;
 
@@ -3121,21 +4106,39 @@ function renderLibrary(){
 
                     <div
                         class="song"
-                        data-playlist="${playlist?.id || ""}"
+                        data-playlist="${
+                            playlist?.id || ""
+                        }"
                         data-index="${index}">
 
                         <img
                             class="song-cover"
-                            src="${song.cover || defaultCover(song.title)}">
+                            src="${
+                                song.cover ||
+                                defaultCover(
+                                    song.title
+                                )
+                            }">
 
-                        <div class="song-info">
+                        <div
+                            class="song-info">
 
-                            <div class="song-title">
-                                ${escapeHTML(song.title)}
+                            <div
+                                class="song-title">
+
+                                ${escapeHTML(
+                                    song.title
+                                )}
+
                             </div>
 
-                            <div class="song-artist">
-                                ${escapeHTML(song.artist || "")}
+                            <div
+                                class="song-artist">
+
+                                ${escapeHTML(
+                                    song.artist || ""
+                                )}
+
                             </div>
 
                         </div>
@@ -3145,7 +4148,30 @@ function renderLibrary(){
                             data-song="${song.id}">
 
                             <svg viewBox="0 0 24 24">
-                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54z"/>
+
+                                <path d="
+                                    M12 21.35
+                                    l-1.45-1.32
+                                    C5.4 15.36
+                                    2 12.28
+                                    2 8.5
+                                    2 5.42
+                                    4.42 3
+                                    7.5 3
+                                    c1.74 0
+                                    3.41.81
+                                    4.5 2.09
+                                    C13.09 3.81
+                                    14.76 3
+                                    16.5 3
+                                    19.58 3
+                                    22 5.42
+                                    22 8.5
+                                    c0 3.78
+                                    -3.4 6.86
+                                    -8.55 11.54z
+                                "/>
+
                             </svg>
 
                         </button>
@@ -3155,71 +4181,87 @@ function renderLibrary(){
                 `;
 
             }
-        ).join("");
+        )
+        .join("");
 
 
     container
-        .querySelectorAll(".song")
-        .forEach(el => {
+        .querySelectorAll(
+            ".song"
+        )
+        .forEach(
+            element => {
 
-            el.addEventListener(
-                "click",
-                e => {
+                element.addEventListener(
+                    "click",
+                    event => {
 
-                    if(
-                        e.target.closest(".song-heart")
-                    ){
-                        return;
-                    }
-
-                    const p =
-                        playlists.find(
-                            x =>
-                            x.id ===
-                            el.dataset.playlist
-                        );
-
-                    if(p){
-
-                        playSong(
-                            p,
-                            Number(
-                                el.dataset.index
+                        if(
+                            event.target.closest(
+                                ".song-heart"
                             )
-                        );
+                        ){
+
+                            return;
+
+                        }
+
+
+                        const playlist =
+                            playlists.find(
+                                p =>
+                                    p.id ===
+                                    element.dataset.playlist
+                            );
+
+
+                        if(playlist){
+
+                            playSong(
+                                playlist,
+                                Number(
+                                    element.dataset.index
+                                ),
+                                true
+                            );
+
+                        }
 
                     }
+                );
 
-                }
-            );
-
-        });
+            }
+        );
 
 
     container
-        .querySelectorAll(".song-heart")
-        .forEach(btn => {
+        .querySelectorAll(
+            ".song-heart"
+        )
+        .forEach(
+            button => {
 
-            btn.addEventListener(
-                "click",
-                e => {
+                button.addEventListener(
+                    "click",
+                    event => {
 
-                    e.stopPropagation();
+                        event.stopPropagation();
 
-                    toggleFavorite(
-                        btn.dataset.song
-                    );
+                        toggleFavorite(
+                            button.dataset.song
+                        );
 
-                }
-            );
+                    }
+                );
 
-        });
+            }
+        );
 
 }
 
 
 /* =========================================================
-   VUE
+   CURRENT VIEW
 ========================================================= */
 
 function renderCurrentView(){
@@ -3227,6 +4269,7 @@ function renderCurrentView(){
     renderPlaylists();
 
     renderLibrary();
+
 
     if(
         currentPlaylist
@@ -3237,8 +4280,11 @@ function renderCurrentView(){
                 "playlist-view"
             );
 
+
         if(
-            view.classList.contains("active")
+            view.classList.contains(
+                "active"
+            )
         ){
 
             openPlaylist(
@@ -3259,33 +4305,39 @@ function renderCurrentView(){
 function importAudio(){
 
     const input =
-        document.createElement("input");
+        document.createElement(
+            "input"
+        );
 
-    input.type = "file";
 
-    /*
-       IMPORTANT :
-       audio/* permet au sélecteur iPhone de proposer
-       les fichiers audio.
-    */
+    input.type =
+        "file";
+
 
     input.accept =
         "audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus";
 
-    input.multiple = true;
+
+    input.multiple =
+        true;
+
 
     input.addEventListener(
         "change",
-        async e => {
+        async event => {
 
             const files =
                 Array.from(
-                    e.target.files || []
+                    event.target.files || []
                 );
 
 
-            if(!files.length){
+            if(
+                !files.length
+            ){
+
                 return;
+
             }
 
 
@@ -3308,7 +4360,9 @@ function importAudio(){
                     !name ||
                     !name.trim()
                 ){
+
                     return;
+
                 }
 
 
@@ -3346,12 +4400,13 @@ function importAudio(){
             }
 
 
-            let imported = 0;
+            let imported =
+                0;
 
 
             for(
-                let i=0;
-                i<files.length;
+                let i = 0;
+                i < files.length;
                 i++
             ){
 
@@ -3359,23 +4414,23 @@ function importAudio(){
                     files[i];
 
 
-                /*
-                   On accepte les extensions même si
-                   certains fichiers provenant de
-                   l'application Fichiers ont un MIME vide.
-                */
-
                 const lower =
                     file.name.toLowerCase();
 
 
                 const isAudio =
-                    file.type.startsWith("audio/") ||
+                    file.type.startsWith(
+                        "audio/"
+                    ) ||
                     /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus)$/i
-                        .test(lower);
+                        .test(
+                            lower
+                        );
 
 
-                if(!isAudio){
+                if(
+                    !isAudio
+                ){
 
                     continue;
 
@@ -3389,8 +4444,8 @@ function importAudio(){
                     i +
                     "_" +
                     Math.random()
-                    .toString(36)
-                    .slice(2);
+                        .toString(36)
+                        .slice(2);
 
 
                 let cover =
@@ -3398,8 +4453,10 @@ function importAudio(){
 
 
                 /*
-                   Récupération de la pochette intégrée
-                   au MP3.
+                    Extraction de la pochette.
+
+                    Elle devient maintenant une DATA URL,
+                    donc elle est persistante.
                 */
 
                 cover =
@@ -3408,12 +4465,9 @@ function importAudio(){
                     );
 
 
-                /*
-                   Pour les autres formats, on utilise
-                   une pochette par défaut.
-                */
-
-                if(!cover){
+                if(
+                    !cover
+                ){
 
                     cover =
                         defaultCover(
@@ -3429,32 +4483,40 @@ function importAudio(){
 
                 const song = {
 
-                    id:id,
+                    id:
+
+                        id,
 
                     title:
+
                         file.name
-                        .replace(
-                            /\.[^/.]+$/,
-                            ""
-                        ),
+                            .replace(
+                                /\.[^/.]+$/,
+                                ""
+                            ),
 
                     artist:
+
                         "Fichier local",
 
                     duration:
+
                         "0:00",
 
-                    cover:cover,
+                    cover:
+
+                        cover,
 
                     playlistId:
+
                         playlist.id
 
                 };
 
 
                 /*
-                   LE FICHIER EST STOCKÉ DANS INDEXED DB.
-                   Il survivra donc à la fermeture de l'app.
+                    LE FICHIER AUDIO ORIGINAL EST
+                    STOCKÉ DANS INDEXEDDB.
                 */
 
                 await dbPut(
@@ -3489,7 +4551,9 @@ function importAudio(){
             );
 
 
-            if(imported === 0){
+            if(
+                imported === 0
+            ){
 
                 alert(
                     "Aucun fichier audio valide n'a été trouvé."
@@ -3501,22 +4565,19 @@ function importAudio(){
     );
 
 
-    /*
-       Le clic doit être déclenché immédiatement
-       pour éviter les problèmes du sélecteur iOS.
-    */
-
     input.click();
 
 }
 
 
 /* =========================================================
-   CREER PLAYLIST
+   CREATE PLAYLIST
 ========================================================= */
 
 document
-    .getElementById("create-playlist")
+    .getElementById(
+        "create-playlist"
+    )
     .addEventListener(
         "click",
         createPlaylist
@@ -3524,7 +4585,9 @@ document
 
 
 document
-    .getElementById("add-playlist")
+    .getElementById(
+        "add-playlist"
+    )
     .addEventListener(
         "click",
         createPlaylist
@@ -3534,48 +4597,64 @@ document
 function createPlaylist(){
 
     document
-        .getElementById("playlist-modal")
-        .classList.add("active");
+        .getElementById(
+            "playlist-modal"
+        )
+        .classList.add(
+            "active"
+        );
 
 }
 
 
 /* =========================================================
-   ANNULER
+   CANCEL PLAYLIST
 ========================================================= */
 
 document
-    .getElementById("cancel-playlist")
+    .getElementById(
+        "cancel-playlist"
+    )
     .addEventListener(
         "click",
         () => {
 
             document
-                .getElementById("playlist-modal")
-                .classList.remove("active");
+                .getElementById(
+                    "playlist-modal"
+                )
+                .classList.remove(
+                    "active"
+                );
 
         }
     );
 
 
 /* =========================================================
-   CONFIRMER PLAYLIST
+   CONFIRM PLAYLIST
 ========================================================= */
 
 document
-    .getElementById("confirm-playlist")
+    .getElementById(
+        "confirm-playlist"
+    )
     .addEventListener(
         "click",
         async () => {
 
             const name =
                 document
-                .getElementById("playlist-name")
-                .value
-                .trim();
+                    .getElementById(
+                        "playlist-name"
+                    )
+                    .value
+                    .trim();
 
 
-            if(!name){
+            if(
+                !name
+            ){
 
                 alert(
                     "Donne un nom à ta playlist."
@@ -3593,7 +4672,9 @@ document
 
 
             let cover =
-                defaultCover(name);
+                defaultCover(
+                    name
+                );
 
 
             if(
@@ -3611,7 +4692,9 @@ document
                 }catch{
 
                     cover =
-                        defaultCover(name);
+                        defaultCover(
+                            name
+                        );
 
                 }
 
@@ -3624,12 +4707,14 @@ document
                     "playlist_" +
                     Date.now(),
 
-                name:name,
+                name:
+                    name,
 
                 description:
                     "Ma playlist",
 
-                cover:cover,
+                cover:
+                    cover,
 
                 songs:[]
 
@@ -3647,16 +4732,23 @@ document
 
 
             document
-                .getElementById("playlist-modal")
-                .classList.remove("active");
+                .getElementById(
+                    "playlist-modal"
+                )
+                .classList.remove(
+                    "active"
+                );
 
 
             document
-                .getElementById("playlist-name")
+                .getElementById(
+                    "playlist-name"
+                )
                 .value = "";
 
 
-            imageInput.value = "";
+            imageInput.value =
+                "";
 
 
             renderPlaylists();
@@ -3670,25 +4762,35 @@ document
 
 
 /* =========================================================
-   CHANGER IMAGE PLAYLIST
+   CHANGE PLAYLIST IMAGE
 ========================================================= */
 
-function changePlaylistImage(id){
+function changePlaylistImage(
+    id
+){
 
     const playlist =
         playlists.find(
             p => p.id === id
         );
 
+
     if(!playlist){
+
         return;
+
     }
 
 
     const input =
-        document.createElement("input");
+        document.createElement(
+            "input"
+        );
 
-    input.type = "file";
+
+    input.type =
+        "file";
+
 
     input.accept =
         "image/jpeg,image/png,image/webp,image/gif";
@@ -3701,7 +4803,9 @@ function changePlaylistImage(id){
                 !input.files ||
                 !input.files[0]
             ){
+
                 return;
+
             }
 
 
@@ -3718,7 +4822,9 @@ function changePlaylistImage(id){
 
             renderPlaylists();
 
-            openPlaylist(id);
+            openPlaylist(
+                id
+            );
 
         };
 
@@ -3729,18 +4835,23 @@ function changePlaylistImage(id){
 
 
 /* =========================================================
-   SUPPRIMER PLAYLIST
+   DELETE PLAYLIST
 ========================================================= */
 
-async function deletePlaylist(id){
+async function deletePlaylist(
+    id
+){
 
     const playlist =
         playlists.find(
             p => p.id === id
         );
 
+
     if(!playlist){
+
         return;
+
     }
 
 
@@ -3751,7 +4862,40 @@ async function deletePlaylist(id){
 
 
     if(!ok){
+
         return;
+
+    }
+
+
+    if(
+        currentPlaylist &&
+        currentPlaylist.id === id
+    ){
+
+        audio.pause();
+
+        clearNextPreload();
+
+        if(
+            currentObjectURL
+        ){
+
+            URL.revokeObjectURL(
+                currentObjectURL
+            );
+
+            currentObjectURL =
+                null;
+
+        }
+
+        audio.removeAttribute(
+            "src"
+        );
+
+        audio.load();
+
     }
 
 
@@ -3775,33 +4919,57 @@ async function deletePlaylist(id){
 
     playlists =
         playlists.filter(
-            p => p.id !== id
+            p =>
+                p.id !== id
         );
 
 
-    currentPlaylist = null;
-    currentSongIndex = -1;
+    currentPlaylist =
+        null;
+
+    currentSongIndex =
+        -1;
+
+    playQueue =
+        [];
+
+    queuePosition =
+        -1;
 
 
     renderPlaylists();
 
 
     document
-        .querySelectorAll(".view")
+        .querySelectorAll(
+            ".view"
+        )
         .forEach(
-            v => v.classList.remove("active")
+            v =>
+                v.classList.remove(
+                    "active"
+                )
         );
 
 
     document
-        .getElementById("home-view")
-        .classList.add("active");
+        .getElementById(
+            "home-view"
+        )
+        .classList.add(
+            "active"
+        );
 
 
     document
-        .querySelectorAll(".nav-item")
+        .querySelectorAll(
+            ".nav-item"
+        )
         .forEach(
-            n => n.classList.remove("active")
+            n =>
+                n.classList.remove(
+                    "active"
+                )
         );
 
 
@@ -3809,7 +4977,9 @@ async function deletePlaylist(id){
         .querySelector(
             '.nav-item[data-view="home"]'
         )
-        .classList.add("active");
+        .classList.add(
+            "active"
+        );
 
 }
 
@@ -3819,69 +4989,89 @@ async function deletePlaylist(id){
 ========================================================= */
 
 document
-    .querySelectorAll(".nav-item")
-    .forEach(item => {
+    .querySelectorAll(
+        ".nav-item"
+    )
+    .forEach(
+        item => {
 
-        item.addEventListener(
-            "click",
-            () => {
+            item.addEventListener(
+                "click",
+                () => {
 
-                const view =
-                    item.dataset.view;
+                    const view =
+                        item.dataset.view;
 
 
-                document
-                    .querySelectorAll(".view")
-                    .forEach(
-                        v =>
-                        v.classList.remove("active")
+                    document
+                        .querySelectorAll(
+                            ".view"
+                        )
+                        .forEach(
+                            v =>
+                                v.classList.remove(
+                                    "active"
+                                )
+                        );
+
+
+                    document
+                        .querySelectorAll(
+                            ".nav-item"
+                        )
+                        .forEach(
+                            n =>
+                                n.classList.remove(
+                                    "active"
+                                )
+                        );
+
+
+                    item.classList.add(
+                        "active"
                     );
 
 
-                document
-                    .querySelectorAll(".nav-item")
-                    .forEach(
-                        n =>
-                        n.classList.remove("active")
-                    );
+                    if(
+                        view === "home"
+                    ){
+
+                        document
+                            .getElementById(
+                                "home-view"
+                            )
+                            .classList.add(
+                                "active"
+                            );
+
+                    }
 
 
-                item.classList.add(
-                    "active"
-                );
+                    if(
+                        view === "library"
+                    ){
 
+                        document
+                            .getElementById(
+                                "library-view"
+                            )
+                            .classList.add(
+                                "active"
+                            );
 
-                if(view === "home"){
+                        renderLibrary();
 
-                    document
-                        .getElementById(
-                            "home-view"
-                        )
-                        .classList.add("active");
-
-                }
-
-
-                if(view === "library"){
-
-                    document
-                        .getElementById(
-                            "library-view"
-                        )
-                        .classList.add("active");
-
-                    renderLibrary();
+                    }
 
                 }
+            );
 
-            }
-        );
-
-    });
+        }
+    );
 
 
 /* =========================================================
-   BOUTONS PLAYER
+   PLAYER BUTTONS
 ========================================================= */
 
 playBtn.addEventListener(
@@ -3891,7 +5081,9 @@ playBtn.addEventListener(
 
 
 document
-    .getElementById("next-btn")
+    .getElementById(
+        "next-btn"
+    )
     .addEventListener(
         "click",
         nextSong
@@ -3899,7 +5091,9 @@ document
 
 
 document
-    .getElementById("prev-btn")
+    .getElementById(
+        "prev-btn"
+    )
     .addEventListener(
         "click",
         previousSong
@@ -3907,13 +5101,16 @@ document
 
 
 document
-    .getElementById("shuffle-btn")
+    .getElementById(
+        "shuffle-btn"
+    )
     .addEventListener(
         "click",
         () => {
 
             shuffle =
                 !shuffle;
+
 
             document
                 .getElementById(
@@ -3924,27 +5121,59 @@ document
                     shuffle
                 );
 
+
+            /*
+                Si une chanson est déjà en cours,
+                on reconstruit immédiatement la file
+                autour de cette chanson.
+
+                La musique actuelle ne change pas.
+            */
+
+            if(
+                currentPlaylist &&
+                currentSongIndex >= 0
+            ){
+
+                buildPlayQueue(
+                    currentPlaylist,
+                    currentSongIndex
+                );
+
+                preloadNextSong();
+
+            }
+
         }
     );
 
 
 document
-    .getElementById("repeat-btn")
+    .getElementById(
+        "repeat-btn"
+    )
     .addEventListener(
         "click",
         () => {
 
-            if(repeat === "off"){
+            if(
+                repeat === "off"
+            ){
 
-                repeat = "all";
+                repeat =
+                    "all";
 
-            }else if(repeat === "all"){
+            }else if(
+                repeat === "all"
+            ){
 
-                repeat = "one";
+                repeat =
+                    "one";
 
             }else{
 
-                repeat = "off";
+                repeat =
+                    "off";
 
             }
 
@@ -3958,12 +5187,17 @@ document
                     repeat !== "off"
                 );
 
+
+            preloadNextSong();
+
         }
     );
 
 
 document
-    .getElementById("player-heart")
+    .getElementById(
+        "player-heart"
+    )
     .addEventListener(
         "click",
         () => {
@@ -3988,7 +5222,7 @@ document
 
 
 /* =========================================================
-   PROGRESSION
+   PROGRESS
 ========================================================= */
 
 audio.addEventListener(
@@ -3996,12 +5230,20 @@ audio.addEventListener(
     () => {
 
         progress.max =
-            audio.duration || 0;
+            isFinite(
+                audio.duration
+            )
+            ? audio.duration
+            : 0;
+
 
         duration.textContent =
             formatTime(
                 audio.duration
             );
+
+
+        updateMediaPosition();
 
     }
 );
@@ -4014,10 +5256,12 @@ audio.addEventListener(
         progress.value =
             audio.currentTime;
 
+
         currentTime.textContent =
             formatTime(
                 audio.currentTime
             );
+
 
         duration.textContent =
             formatTime(
@@ -4037,6 +5281,9 @@ progress.addEventListener(
                 progress.value
             );
 
+
+        updateMediaPosition();
+
     }
 );
 
@@ -4055,11 +5302,13 @@ volume.addEventListener(
 
 
 audio.volume =
-    Number(volume.value);
+    Number(
+        volume.value
+    );
 
 
 /* =========================================================
-   DUREE
+   SAUVEGARDE DUREE
 ========================================================= */
 
 audio.addEventListener(
@@ -4079,19 +5328,47 @@ audio.addEventListener(
                 ];
 
 
-            song.duration =
+            const newDuration =
                 formatTime(
                     audio.duration
                 );
 
 
-            savePlaylist(
-                currentPlaylist
-            );
+            if(
+                song.duration !==
+                newDuration
+            ){
 
-            renderCurrentView();
+                song.duration =
+                    newDuration;
+
+
+                savePlaylist(
+                    currentPlaylist
+                );
+
+            }
 
         }
+
+    }
+);
+
+
+/* =========================================================
+   PRECHARGEMENT AUTOMATIQUE
+========================================================= */
+
+audio.addEventListener(
+    "loadeddata",
+    () => {
+
+        /*
+            On tente de préparer le morceau suivant
+            dès que le morceau actuel est réellement chargé.
+        */
+
+        preloadNextSong();
 
     }
 );
@@ -4102,7 +5379,9 @@ audio.addEventListener(
 ========================================================= */
 
 document
-    .getElementById("import-audio")
+    .getElementById(
+        "import-audio"
+    )
     .addEventListener(
         "click",
         importAudio
@@ -4110,18 +5389,22 @@ document
 
 
 /* =========================================================
-   PROFIL
+   PROFILE
 ========================================================= */
 
 document
-    .getElementById("profile-name")
+    .getElementById(
+        "profile-name"
+    )
     .textContent =
         profile.name ||
         "Utilisateur";
 
 
 document
-    .getElementById("profile-name")
+    .getElementById(
+        "profile-name"
+    )
     .addEventListener(
         "click",
         () => {
@@ -4142,10 +5425,14 @@ document
                 profile.name =
                     name.trim();
 
+
                 localStorage.setItem(
                     STORAGE_PROFILE,
-                    JSON.stringify(profile)
+                    JSON.stringify(
+                        profile
+                    )
                 );
+
 
                 document
                     .getElementById(
@@ -4161,16 +5448,20 @@ document
 
 
 /* =========================================================
-   UTILITAIRE
+   FORMAT TIME
 ========================================================= */
 
-function formatTime(seconds){
+function formatTime(
+    seconds
+){
 
     if(
         !isFinite(seconds) ||
         seconds < 0
     ){
+
         return "0:00";
+
     }
 
 
@@ -4179,12 +5470,16 @@ function formatTime(seconds){
             seconds / 60
         );
 
+
     const sec =
         Math.floor(
             seconds % 60
         )
         .toString()
-        .padStart(2,"0");
+        .padStart(
+            2,
+            "0"
+        );
 
 
     return `${min}:${sec}`;
@@ -4192,7 +5487,13 @@ function formatTime(seconds){
 }
 
 
-function escapeHTML(str){
+/* =========================================================
+   ESCAPE HTML
+========================================================= */
+
+function escapeHTML(
+    str
+){
 
     return String(
         str || ""
@@ -4231,24 +5532,30 @@ async function init(){
 
         await openDatabase();
 
+
         favorites =
             loadFavorites();
 
+
         await loadPlaylists();
+
+
+        /*
+            Migration automatique des anciennes pochettes
+            blob: éventuelles.
+
+            Les anciennes pochettes blob ne peuvent pas être
+            récupérées après fermeture si elles avaient été
+            sauvegardées comme URL blob.
+
+            Les nouvelles importations utilisent uniquement
+            des Data URL persistantes.
+        */
+
 
         renderPlaylists();
 
         renderLibrary();
-
-
-        /*
-           Si une ancienne version avait enregistré
-           des playlists avec des URL blob impossibles
-           à récupérer après fermeture, elles restent
-           affichées mais les anciens fichiers devront
-           être réimportés une seule fois.
-        */
-
 
     }catch(error){
 
@@ -4256,6 +5563,7 @@ async function init(){
             "Erreur initialisation:",
             error
         );
+
 
         alert(
             "Spotity n'arrive pas à initialiser son stockage local."
@@ -4267,23 +5575,37 @@ async function init(){
 
 
 /* =========================================================
-   MEDIA SESSION — MISE À JOUR LECTURE / PAUSE
+   PAGE / APP LIFECYCLE
 ========================================================= */
 
-audio.addEventListener(
-    "play",
+document.addEventListener(
+    "visibilitychange",
     () => {
 
         if(
-            "mediaSession" in navigator
+            document.visibilityState ===
+            "visible"
         ){
 
-            try{
+            /*
+                On resynchronise Media Session
+                lorsque l'application revient au premier plan.
+            */
 
-                navigator.mediaSession.playbackState =
-                    "playing";
+            if(
+                currentPlaylist &&
+                currentPlaylist.songs[
+                    currentSongIndex
+                ]
+            ){
 
-            }catch{}
+                setupMediaSession(
+                    currentPlaylist.songs[
+                        currentSongIndex
+                    ]
+                );
+
+            }
 
         }
 
@@ -4291,20 +5613,35 @@ audio.addEventListener(
 );
 
 
-audio.addEventListener(
-    "pause",
+/* =========================================================
+   NETTOYAGE AVANT FERMETURE
+========================================================= */
+
+window.addEventListener(
+    "beforeunload",
     () => {
 
+        /*
+            IMPORTANT :
+            on ne supprime PAS les fichiers d'IndexedDB.
+
+            On libère seulement les URL temporaires
+            utilisées pour la lecture actuelle.
+        */
+
+        clearNextPreload();
+
+
         if(
-            "mediaSession" in navigator
+            currentObjectURL
         ){
 
-            try{
+            URL.revokeObjectURL(
+                currentObjectURL
+            );
 
-                navigator.mediaSession.playbackState =
-                    "paused";
-
-            }catch{}
+            currentObjectURL =
+                null;
 
         }
 
