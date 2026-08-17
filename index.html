@@ -877,11 +877,28 @@ input[type="range"]::-webkit-slider-thumb{
 
     :root{
         --sidebar:65px;
-        --player:74px;
+        --player:calc(74px + env(safe-area-inset-bottom));
+    }
+
+    html,
+    body{
+        min-height:100%;
+        height:100%;
+        overflow:hidden;
+    }
+
+    .app{
+        height:100dvh;
+        min-height:100dvh;
     }
 
     .sidebar{
-        padding:12px 5px 5px;
+        width:var(--sidebar);
+        height:100dvh;
+        padding:
+            calc(12px + env(safe-area-inset-top))
+            5px
+            calc(5px + env(safe-area-inset-bottom));
     }
 
     .logo{
@@ -895,6 +912,7 @@ input[type="range"]::-webkit-slider-thumb{
 
     .nav-item{
         justify-content:center;
+        min-height:44px;
         padding:12px 5px;
     }
 
@@ -927,32 +945,68 @@ input[type="range"]::-webkit-slider-thumb{
         display:none;
     }
 
+    .main{
+        height:100dvh;
+        min-height:100dvh;
+        overflow-y:auto;
+        overscroll-behavior:contain;
+        -webkit-overflow-scrolling:touch;
+    }
+
     .topbar{
-        height:58px;
-        padding:8px 10px;
+        position:sticky;
+        top:0;
+        z-index:50;
+        min-height:58px;
+        height:auto;
+        padding:
+            calc(8px + env(safe-area-inset-top))
+            10px
+            8px;
+        justify-content:center;
     }
 
     .import-buttons{
-        gap:5px;
+        width:100%;
+        display:flex;
+        gap:6px;
     }
 
     .import-btn{
-        padding:8px 10px;
+        flex:1;
+        min-height:42px;
+        padding:9px 8px;
         font-size:10px;
+        white-space:nowrap;
+        text-align:center;
+        touch-action:manipulation;
     }
 
     .section{
-        padding:8px 14px 110px;
+        padding:
+            8px
+            14px
+            calc(110px + env(safe-area-inset-bottom));
+    }
+
+    .section-header{
+        margin:15px 0;
     }
 
     .playlist-grid{
-        grid-template-columns:
-            repeat(2,minmax(0,1fr));
+        grid-template-columns:repeat(2,minmax(0,1fr));
         gap:10px;
     }
 
     .playlist-card{
         padding:10px;
+    }
+
+    .playlist-card,
+    .nav-item,
+    .import-btn,
+    button{
+        -webkit-tap-highlight-color:transparent;
     }
 
     .playlist-header{
@@ -976,11 +1030,23 @@ input[type="range"]::-webkit-slider-thumb{
     }
 
     .search-container{
+        width:100%;
         max-width:100%;
     }
 
+    .search-input{
+        min-height:44px;
+    }
+
     .player{
-        padding:6px 8px;
+        left:0;
+        right:0;
+        bottom:0;
+        height:var(--player);
+        padding:
+            6px
+            8px
+            calc(6px + env(safe-area-inset-bottom));
         gap:6px;
     }
 
@@ -1005,10 +1071,6 @@ input[type="range"]::-webkit-slider-thumb{
         max-width:none;
     }
 
-    .player-right{
-        display:none;
-    }
-
     .controls{
         gap:1px;
     }
@@ -1019,15 +1081,20 @@ input[type="range"]::-webkit-slider-thumb{
     }
 
     .main-play{
-        width:38px;
-        height:38px;
+        width:42px;
+        height:42px;
     }
 
     .progress{
         display:none;
     }
 
+    .player-right{
+        display:none;
+    }
+
     .song{
+        min-height:62px;
         padding:7px 5px;
     }
 
@@ -1041,12 +1108,32 @@ input[type="range"]::-webkit-slider-thumb{
 
     .song-delete{
         display:flex;
-        width:25px;
-        height:25px;
+        width:30px;
+        height:30px;
     }
 
     #auto-random-btn{
         display:flex;
+    }
+
+    .modal{
+        align-items:flex-start;
+        padding:
+            calc(20px + env(safe-area-inset-top))
+            16px
+            calc(20px + env(safe-area-inset-bottom));
+        overflow-y:auto;
+    }
+
+    .modal-box{
+        margin-top:10px;
+        max-height:calc(
+            100dvh -
+            env(safe-area-inset-top) -
+            env(safe-area-inset-bottom) -
+            30px
+        );
+        overflow-y:auto;
     }
 }
 
@@ -4854,7 +4941,6 @@ function renderLibrary(){
                             data-song="${song.id}">
 
                             <svg viewBox="0 0 24 24">
-
                                 <path d="
                                     M12 21.35
                                     l-1.45-1.32
@@ -4877,7 +4963,6 @@ function renderLibrary(){
                                     -3.4 6.86
                                     -8.55 11.54z
                                 "/>
-
                             </svg>
 
                         </button>
