@@ -15,7 +15,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Spotity">
 
-<!-- PWA Manifest en data URI -->
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Spotity%22%2C%22short_name%22%3A%22Spotity%22%2C%22description%22%3A%22Votre%20lecteur%20de%20musique%20personnel%22%2C%22start_url%22%3A%22.%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23121212%22%2C%22theme_color%22%3A%22%23121212%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20512%20512'%253E%253Crect%20width%3D'512'%20height%3D'512'%20rx%3D'100'%20fill%3D'%25231DB954'%2F%253E%253Cpath%20d%3D'M140%20140v232%20M180%20120v272%20M220%20100v312%20M260%20120v272%20M300%20140v232'%20stroke%3D'black'%20stroke-width%3D'50'%20stroke-linecap%3D'round'%2F%253E%253C%2Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%20maskable%22%7D%5D%7D">
 
 <meta name="mobile-web-app-capable" content="yes">
@@ -1446,7 +1445,8 @@ input[type="range"]::-webkit-slider-thumb{
 <audio
     id="audio"
     preload="auto"
-    playsinline>
+    playsinline
+    webkit-playsinline>
 </audio>
 
 <div
@@ -1552,6 +1552,19 @@ let nextPreloadURL = null;
 let nextPreloadSongId = null;
 
 let preloadAudio = null;
+
+/*
+ * IMPORTANT :
+ * Ces variables servent à mieux gérer iOS,
+ * les interruptions audio et les changements
+ * de route Bluetooth / AirPods.
+ */
+
+let wasPlayingBeforeInterruption = false;
+let intentionalPause = false;
+let loadingSong = false;
+let playRequestId = 0;
+let lastUserInteraction = 0;
 
 
 /* =========================================================
@@ -2800,7 +2813,6 @@ function openPlaylist(id){
         );
 
 
-    // Recherche dans la playlist
     const searchInput =
         document.getElementById(
             "playlist-search"
@@ -2984,6 +2996,8 @@ function attachSongListeners(
 
                         }
 
+                        markUserInteraction();
+
                         playSong(
                             playlist,
                             Number(
@@ -3105,12 +3119,13 @@ async function deleteSongFromPlaylist(
     }
 
 
-    // Si la chanson en cours est supprimée
     if(
         currentPlaylist &&
         currentPlaylist.id === playlistId &&
         currentSongIndex === songIndex
     ){
+
+        intentionalPause = true;
 
         audio.pause();
 
@@ -3138,24 +3153,24 @@ async function deleteSongFromPlaylist(
         currentSongIndex =
             -1;
 
+        currentPlaylist =
+            null;
+
     }
 
 
-    // Supprimer le fichier audio de IndexedDB
     await dbDelete(
         STORE_SONGS,
         songId
     );
 
 
-    // Supprimer la chanson de la playlist
     playlist.songs.splice(
         songIndex,
         1
     );
 
 
-    // Mettre à jour les favoris si nécessaire
     if(
         isFavorite(songId)
     ){
@@ -3170,13 +3185,11 @@ async function deleteSongFromPlaylist(
     }
 
 
-    // Sauvegarder la playlist
     await savePlaylist(
         playlist
     );
 
 
-    // Mettre à jour l'index courant si nécessaire
     if(
         currentPlaylist &&
         currentPlaylist.id === playlistId
@@ -3193,8 +3206,7 @@ async function deleteSongFromPlaylist(
     }
 
 
-    // Rafraîchir l'affichage
-    renderPlaylists();
+    renderCurrentView();
 
     openPlaylist(
         playlistId
@@ -3387,12 +3399,12 @@ function playPlaylist(id){
 
     }
 
+    markUserInteraction();
 
     buildPlayQueue(
         playlist,
         0
     );
-
 
     playSong(
         playlist,
@@ -3635,7 +3647,79 @@ function clearNextPreload(){
 
 
 /* =========================================================
-   JOUER MUSIQUE - CORRIGÉ POUR iOS
+   MARQUEUR D'INTERACTION UTILISATEUR
+========================================================= */
+
+function markUserInteraction(){
+
+    lastUserInteraction =
+        Date.now();
+
+    intentionalPause =
+        false;
+
+}
+
+
+/* =========================================================
+   PLAY SAFE
+========================================================= */
+
+async function safePlay(){
+
+    if(
+        !audio.src
+    ){
+
+        return false;
+
+    }
+
+
+    try{
+
+        const promise =
+            audio.play();
+
+        if(
+            promise &&
+            typeof promise.then === "function"
+        ){
+
+            await promise;
+
+        }
+
+        return true;
+
+    }catch(error){
+
+        /*
+         * AbortError = changement de source / interruption
+         * NotAllowedError = restriction d'autoplay iOS
+         */
+
+        if(
+            error &&
+            error.name !== "AbortError"
+        ){
+
+            console.warn(
+                "Lecture impossible:",
+                error
+            );
+
+        }
+
+        return false;
+
+    }
+
+}
+
+
+/* =========================================================
+   PLAY SONG
 ========================================================= */
 
 async function playSong(
@@ -3654,6 +3738,10 @@ async function playSong(
     }
 
 
+    const requestId =
+        ++playRequestId;
+
+
     currentPlaylist =
         playlist;
 
@@ -3670,10 +3758,19 @@ async function playSong(
 
     }else{
 
-        queuePosition =
+        const foundPosition =
             playQueue.indexOf(
                 index
             );
+
+        if(
+            foundPosition >= 0
+        ){
+
+            queuePosition =
+                foundPosition;
+
+        }
 
     }
 
@@ -3688,6 +3785,9 @@ async function playSong(
         ];
 
 
+    loadingSong = true;
+
+
     try{
 
         const stored =
@@ -3695,6 +3795,21 @@ async function playSong(
                 STORE_SONGS,
                 song.id
             );
+
+
+        /*
+         * Si une nouvelle demande de morceau
+         * est arrivée pendant le chargement,
+         * on abandonne cette demande.
+         */
+
+        if(
+            requestId !== playRequestId
+        ){
+
+            return;
+
+        }
 
 
         if(
@@ -3728,6 +3843,18 @@ async function playSong(
         }
 
 
+        /*
+         * On coupe proprement l'ancienne source
+         * avant de charger la nouvelle.
+         */
+
+        try{
+
+            audio.pause();
+
+        }catch{}
+
+
         currentObjectURL =
             URL.createObjectURL(
                 stored.blob
@@ -3739,6 +3866,14 @@ async function playSong(
 
         audio.preload =
             "auto";
+
+
+        /*
+         * Important sur iOS :
+         * load() force Safari à reconstruire
+         * correctement le média après un changement
+         * de fichier Blob.
+         */
 
         audio.load();
 
@@ -3753,57 +3888,89 @@ async function playSong(
         );
 
 
-        // Lecture avec gestion iOS améliorée
-        try{
+        /*
+         * On attend loadedmetadata/canplay avant
+         * de demander la lecture.
+         */
 
-            const playPromise =
-                audio.play();
+        const startPlayback =
+            async () => {
 
-            if(
-                playPromise !== undefined
-            ){
+                if(
+                    requestId !== playRequestId
+                ){
 
-                playPromise.catch(
-                    error => {
+                    return;
 
-                        console.warn(
-                            "Lecture automatique bloquée:",
-                            error
-                        );
+                }
+
+                const success =
+                    await safePlay();
+
+                if(
+                    !success &&
+                    requestId === playRequestId
+                ){
+
+                    /*
+                     * iOS peut refuser une lecture automatique.
+                     * On ne boucle volontairement pas avec des
+                     * play() répétés qui créent des états bizarres.
+                     */
+
+                    console.warn(
+                        "iOS a refusé la reprise automatique."
+                    );
+
+                }
+
+            };
 
 
-                        // Réessayer après un court délai
-                        setTimeout(
-                            () => {
+        if(
+            audio.readyState >= 3
+        ){
 
-                                audio
-                                    .play()
-                                    .catch(
-                                        console.error
-                                    );
+            await startPlayback();
 
-                            },
-                            100
-                        );
+        }else{
 
-                    }
-                );
-
-            }
-
-        }catch(error){
-
-            console.warn(
-                "Erreur de lecture:",
-                error
+            audio.addEventListener(
+                "canplay",
+                startPlayback,
+                {
+                    once:true
+                }
             );
 
         }
 
 
-        preloadNextSong();
+        loadingSong = false;
+
+        /*
+         * Le préchargement se fait après avoir lancé
+         * le morceau courant.
+         */
+
+        setTimeout(
+            () => {
+
+                if(
+                    requestId === playRequestId
+                ){
+
+                    preloadNextSong();
+
+                }
+
+            },
+            100
+        );
 
     }catch(error){
+
+        loadingSong = false;
 
         console.error(
             error
@@ -3906,6 +4073,8 @@ function updateHeart(){
 
 function togglePlay(){
 
+    markUserInteraction();
+
     if(
         !audio.src
     ){
@@ -3929,13 +4098,15 @@ function togglePlay(){
         audio.paused
     ){
 
-        audio
-            .play()
-            .catch(
-                console.error
-            );
+        intentionalPause =
+            false;
+
+        safePlay();
 
     }else{
+
+        intentionalPause =
+            true;
 
         audio.pause();
 
@@ -4002,7 +4173,7 @@ audio.addEventListener(
 
 
 /* =========================================================
-   NEXT - CORRIGÉ POUR iOS
+   NEXT
 ========================================================= */
 
 function nextSong(){
@@ -4015,6 +4186,9 @@ function nextSong(){
         return;
 
     }
+
+
+    markUserInteraction();
 
 
     if(autoRandom){
@@ -4055,6 +4229,9 @@ function nextSong(){
 
         }else{
 
+            intentionalPause =
+                true;
+
             audio.pause();
 
             return;
@@ -4073,6 +4250,12 @@ function nextSong(){
     queuePosition =
         nextPosition;
 
+
+    /*
+     * IMPORTANT :
+     * Le bouton suivant appelle directement playSong().
+     * On ne touche plus à currentTime = duration.
+     */
 
     playSong(
         currentPlaylist,
@@ -4099,12 +4282,19 @@ function previousSong(){
     }
 
 
+    markUserInteraction();
+
+
     if(
         audio.currentTime > 3
     ){
 
-        audio.currentTime =
-            0;
+        try{
+
+            audio.currentTime =
+                0;
+
+        }catch{}
 
         updateMediaPosition();
 
@@ -4170,25 +4360,34 @@ function previousSong(){
 
 
 /* =========================================================
-   FIN MUSIQUE - CORRIGÉ POUR iOS
+   FIN MUSIQUE
 ========================================================= */
 
 audio.addEventListener(
     "ended",
     () => {
 
+        /*
+         * On laisse toujours ended piloter
+         * le changement de morceau.
+         */
+
         if(
             repeat === "one"
         ){
 
-            audio.currentTime =
-                0;
+            try{
 
-            audio
-                .play()
-                .catch(
-                    console.error
-                );
+                audio.currentTime =
+                    0;
+
+            }catch{}
+
+
+            intentionalPause =
+                false;
+
+            safePlay();
 
             return;
 
@@ -4211,7 +4410,7 @@ audio.addEventListener(
 
 
 /* =========================================================
-   MEDIA SESSION - CORRIGÉ POUR iOS
+   MEDIA SESSION
 ========================================================= */
 
 function setupMediaSession(
@@ -4265,29 +4464,43 @@ function setupMediaSession(
             });
 
 
+        /*
+         * PLAY
+         */
+
         navigator.mediaSession.setActionHandler(
             "play",
             () => {
 
-                audio
-                    .play()
-                    .catch(
-                        console.error
-                    );
+                intentionalPause =
+                    false;
+
+                safePlay();
 
             }
         );
 
 
+        /*
+         * PAUSE
+         */
+
         navigator.mediaSession.setActionHandler(
             "pause",
             () => {
+
+                intentionalPause =
+                    true;
 
                 audio.pause();
 
             }
         );
 
+
+        /*
+         * PREVIOUS
+         */
 
         navigator.mediaSession.setActionHandler(
             "previoustrack",
@@ -4299,6 +4512,10 @@ function setupMediaSession(
         );
 
 
+        /*
+         * NEXT
+         */
+
         navigator.mediaSession.setActionHandler(
             "nexttrack",
             () => {
@@ -4309,47 +4526,112 @@ function setupMediaSession(
         );
 
 
+        /*
+         * AVANCE 10 SECONDES
+         */
+
         navigator.mediaSession.setActionHandler(
             "seekforward",
             details => {
 
                 const offset =
-                    details.seekOffset ||
-                    10;
+                    Number(
+                        details?.seekOffset
+                    ) > 0
+                    ? Number(
+                        details.seekOffset
+                    )
+                    : 10;
 
-                audio.currentTime =
+
+                if(
+                    !isFinite(audio.duration)
+                ){
+
+                    return;
+
+                }
+
+
+                const target =
                     Math.min(
-                        audio.duration || Infinity,
+                        audio.duration,
                         audio.currentTime +
                         offset
                     );
+
+
+                try{
+
+                    audio.currentTime =
+                        target;
+
+                }catch(error){
+
+                    console.warn(
+                        "Impossible d'avancer:",
+                        error
+                    );
+
+                }
+
 
                 updateMediaPosition();
 
             }
         );
 
+
+        /*
+         * RETOUR 10 SECONDES
+         */
 
         navigator.mediaSession.setActionHandler(
             "seekbackward",
             details => {
 
                 const offset =
-                    details.seekOffset ||
-                    10;
+                    Number(
+                        details?.seekOffset
+                    ) > 0
+                    ? Number(
+                        details.seekOffset
+                    )
+                    : 10;
 
-                audio.currentTime =
+
+                const target =
                     Math.max(
                         0,
                         audio.currentTime -
                         offset
                     );
 
+
+                try{
+
+                    audio.currentTime =
+                        target;
+
+                }catch(error){
+
+                    console.warn(
+                        "Impossible de revenir en arrière:",
+                        error
+                    );
+
+                }
+
+
                 updateMediaPosition();
 
             }
         );
 
+
+        /*
+         * POSITION EXACTE
+         */
 
         try{
 
@@ -4368,18 +4650,49 @@ function setupMediaSession(
 
 
                     if(
-                        details.fastSeek &&
-                        "fastSeek" in audio
+                        !isFinite(audio.duration)
                     ){
 
-                        audio.fastSeek(
-                            details.seekTime
+                        return;
+
+                    }
+
+
+                    const target =
+                        Math.max(
+                            0,
+                            Math.min(
+                                audio.duration,
+                                details.seekTime
+                            )
                         );
 
-                    }else{
 
-                        audio.currentTime =
-                            details.seekTime;
+                    try{
+
+                        if(
+                            details.fastSeek &&
+                            typeof audio.fastSeek ===
+                            "function"
+                        ){
+
+                            audio.fastSeek(
+                                target
+                            );
+
+                        }else{
+
+                            audio.currentTime =
+                                target;
+
+                        }
+
+                    }catch(error){
+
+                        console.warn(
+                            "Erreur seekto:",
+                            error
+                        );
 
                     }
 
@@ -4398,6 +4711,42 @@ function setupMediaSession(
 
         }
 
+
+        /*
+         * STOP
+         */
+
+        try{
+
+            navigator.mediaSession.setActionHandler(
+                "stop",
+                () => {
+
+                    intentionalPause =
+                        true;
+
+                    audio.pause();
+
+                    try{
+
+                        audio.currentTime =
+                            0;
+
+                    }catch{}
+
+                }
+            );
+
+        }catch{}
+
+
+        navigator.mediaSession.playbackState =
+            audio.paused
+            ? "paused"
+            : "playing";
+
+
+        updateMediaPosition();
 
     }catch(error){
 
@@ -4453,9 +4802,12 @@ function updateMediaPosition(){
                         audio.playbackRate || 1,
 
                     position:
-                        Math.min(
-                            audio.currentTime,
-                            audio.duration
+                        Math.max(
+                            0,
+                            Math.min(
+                                audio.currentTime,
+                                audio.duration
+                            )
                         )
 
                 });
@@ -4469,21 +4821,13 @@ function updateMediaPosition(){
 
 audio.addEventListener(
     "timeupdate",
-    () => {
-
-        updateMediaPosition();
-
-    }
+    updateMediaPosition
 );
 
 
 audio.addEventListener(
     "ratechange",
-    () => {
-
-        updateMediaPosition();
-
-    }
+    updateMediaPosition
 );
 
 
@@ -4772,6 +5116,8 @@ function renderLibrary(){
 
 
                         if(playlist){
+
+                            markUserInteraction();
 
                             playSong(
                                 playlist,
@@ -5410,6 +5756,8 @@ async function deletePlaylist(
         currentPlaylist.id === id
     ){
 
+        intentionalPause = true;
+
         audio.pause();
 
         clearNextPreload();
@@ -5623,7 +5971,13 @@ document
     )
     .addEventListener(
         "click",
-        nextSong
+        () => {
+
+            markUserInteraction();
+
+            nextSong();
+
+        }
     );
 
 
@@ -5633,7 +5987,13 @@ document
     )
     .addEventListener(
         "click",
-        previousSong
+        () => {
+
+            markUserInteraction();
+
+            previousSong();
+
+        }
     );
 
 
@@ -5644,6 +6004,8 @@ document
     .addEventListener(
         "click",
         () => {
+
+            markUserInteraction();
 
             shuffle =
                 !shuffle;
@@ -5684,6 +6046,8 @@ document
 autoRandomBtn.addEventListener(
     "click",
     () => {
+
+        markUserInteraction();
 
         autoRandom =
             !autoRandom;
@@ -5726,6 +6090,8 @@ document
     .addEventListener(
         "click",
         () => {
+
+            markUserInteraction();
 
             if(
                 repeat === "off"
@@ -5808,6 +6174,13 @@ audio.addEventListener(
             : 0;
 
 
+        progress.value =
+            Math.min(
+                audio.currentTime || 0,
+                audio.duration || 0
+            );
+
+
         duration.textContent =
             formatTime(
                 audio.duration
@@ -5847,11 +6220,16 @@ progress.addEventListener(
     "input",
     () => {
 
-        audio.currentTime =
-            Number(
-                progress.value
-            );
+        markUserInteraction();
 
+        try{
+
+            audio.currentTime =
+                Number(
+                    progress.value
+                );
+
+        }catch{}
 
         updateMediaPosition();
 
@@ -5934,7 +6312,19 @@ audio.addEventListener(
     "loadeddata",
     () => {
 
-        preloadNextSong();
+        /*
+         * Ne pas lancer de deuxième lecteur.
+         * Le preload reste complètement silencieux.
+         */
+
+        setTimeout(
+            () => {
+
+                preloadNextSong();
+
+            },
+            150
+        );
 
     }
 );
@@ -6089,7 +6479,329 @@ function escapeHTML(
 
 
 /* =========================================================
-   INITIALISATION - CORRIGÉ POUR iOS
+   GESTION DES INTERRUPTIONS AUDIO iOS
+========================================================= */
+
+/*
+ * Safari/iOS peut mettre l'élément audio en pause
+ * lors d'une interruption audio ou d'un changement
+ * de route Bluetooth.
+ *
+ * On mémorise uniquement si Spotity était réellement
+ * en train de jouer.
+ */
+
+function rememberPlaybackState(){
+
+    wasPlayingBeforeInterruption =
+        !audio.paused &&
+        !audio.ended &&
+        !!audio.src;
+
+}
+
+
+/*
+ * Quand la page redevient visible, on ne force PAS
+ * systématiquement play().
+ *
+ * On tente seulement de reprendre si :
+ * - le morceau jouait avant l'interruption
+ * - l'utilisateur n'a pas volontairement appuyé pause
+ * - la source est toujours disponible.
+ */
+
+async function restorePlaybackIfNeeded(){
+
+    if(
+        intentionalPause
+    ){
+
+        return;
+
+    }
+
+
+    if(
+        !wasPlayingBeforeInterruption
+    ){
+
+        return;
+
+    }
+
+
+    if(
+        !audio.src ||
+        audio.ended
+    ){
+
+        return;
+
+    }
+
+
+    /*
+     * Petit délai pour laisser iOS rétablir
+     * la route Bluetooth / AirPods.
+     */
+
+    setTimeout(
+        async () => {
+
+            if(
+                intentionalPause ||
+                !wasPlayingBeforeInterruption
+            ){
+
+                return;
+
+            }
+
+
+            if(
+                audio.paused
+            ){
+
+                await safePlay();
+
+            }
+
+        },
+        250
+    );
+
+}
+
+
+/*
+ * visibilitychange
+ */
+
+document.addEventListener(
+    "visibilitychange",
+    () => {
+
+        if(
+            document.visibilityState ===
+            "hidden"
+        ){
+
+            rememberPlaybackState();
+
+            return;
+
+        }
+
+
+        if(
+            document.visibilityState ===
+            "visible"
+        ){
+
+            if(
+                currentPlaylist &&
+                currentPlaylist.songs[
+                    currentSongIndex
+                ]
+            ){
+
+                setupMediaSession(
+                    currentPlaylist.songs[
+                        currentSongIndex
+                    ]
+                );
+
+            }
+
+
+            restorePlaybackIfNeeded();
+
+        }
+
+    }
+);
+
+
+/*
+ * pageshow est utile notamment lorsque iOS
+ * remet la PWA au premier plan.
+ */
+
+window.addEventListener(
+    "pageshow",
+    () => {
+
+        if(
+            currentPlaylist &&
+            currentPlaylist.songs[
+                currentSongIndex
+            ]
+        ){
+
+            setupMediaSession(
+                currentPlaylist.songs[
+                    currentSongIndex
+                ]
+            );
+
+        }
+
+        restorePlaybackIfNeeded();
+
+    }
+);
+
+
+/*
+ * pagehide
+ */
+
+window.addEventListener(
+    "pagehide",
+    () => {
+
+        rememberPlaybackState();
+
+    }
+);
+
+
+/*
+ * focus / blur
+ */
+
+window.addEventListener(
+    "blur",
+    () => {
+
+        rememberPlaybackState();
+
+    }
+);
+
+
+window.addEventListener(
+    "focus",
+    () => {
+
+        restorePlaybackIfNeeded();
+
+    }
+);
+
+
+/* =========================================================
+   DETECTION INTERRUPTION AUDIO
+========================================================= */
+
+/*
+ * Certains Safari/iOS exposent les événements
+ * de changement d'état du média.
+ *
+ * Ils sont utilisés sans dépendre d'une API Bluetooth
+ * qui n'est pas disponible pour une PWA.
+ */
+
+audio.addEventListener(
+    "waiting",
+    () => {
+
+        /*
+         * waiting ne signifie PAS forcément interruption.
+         * On mémorise seulement l'état.
+         */
+
+        if(
+            !audio.paused
+        ){
+
+            wasPlayingBeforeInterruption =
+                true;
+
+        }
+
+    }
+);
+
+
+audio.addEventListener(
+    "stalled",
+    () => {
+
+        if(
+            !audio.paused
+        ){
+
+            wasPlayingBeforeInterruption =
+                true;
+
+        }
+
+    }
+);
+
+
+/*
+ * Si la lecture reprend naturellement après
+ * une interruption, on remet l'état à jour.
+ */
+
+audio.addEventListener(
+    "playing",
+    () => {
+
+        wasPlayingBeforeInterruption =
+            true;
+
+        intentionalPause =
+            false;
+
+        if(
+            "mediaSession" in navigator
+        ){
+
+            try{
+
+                navigator.mediaSession.playbackState =
+                    "playing";
+
+            }catch{}
+
+        }
+
+    }
+);
+
+
+/*
+ * Une pause provoquée par iOS peut être difficile
+ * à distinguer d'une pause volontaire.
+ *
+ * On ne transforme donc PAS automatiquement
+ * chaque pause en play(), ce qui éviterait une boucle
+ * et les blocages d'autoplay.
+ */
+
+audio.addEventListener(
+    "pause",
+    () => {
+
+        if(
+            intentionalPause
+        ){
+
+            wasPlayingBeforeInterruption =
+                false;
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   INITIALISATION
 ========================================================= */
 
 async function init(){
@@ -6117,43 +6829,35 @@ async function init(){
         );
 
 
-        // Configuration spécifique pour iOS
+        /*
+         * On installe les handlers Media Session
+         * immédiatement.
+         */
+
         if(
-            'mediaSession' in navigator
+            "mediaSession" in navigator
         ){
 
-            // Précharger les gestionnaires au démarrage
-            setupMediaSession({
-                title: "Spotity",
-                artist: "Prêt à jouer",
-                cover: defaultCover("Spotity")
-            });
+            try{
+
+                navigator.mediaSession.playbackState =
+                    "none";
+
+            }catch{}
 
         }
 
 
-        // Activer la lecture en arrière-plan sur iOS
-        document.addEventListener(
-            'touchstart',
-            () => {
-
-                if(
-                    audio.paused &&
-                    audio.src
-                ){
-
-                    audio
-                        .play()
-                        .catch(
-                            () => {}
-                        );
-
-                }
-
-            },
-            { once: true }
-        );
-
+        /*
+         * IMPORTANT :
+         *
+         * On ne fait PLUS :
+         *
+         * document.addEventListener("touchstart", play)
+         *
+         * car cela peut provoquer des lectures forcées
+         * et des états incohérents sur iOS.
+         */
 
     }catch(error){
 
@@ -6170,40 +6874,6 @@ async function init(){
     }
 
 }
-
-
-/* =========================================================
-   PAGE / APP LIFECYCLE
-========================================================= */
-
-document.addEventListener(
-    "visibilitychange",
-    () => {
-
-        if(
-            document.visibilityState ===
-            "visible"
-        ){
-
-            if(
-                currentPlaylist &&
-                currentPlaylist.songs[
-                    currentSongIndex
-                ]
-            ){
-
-                setupMediaSession(
-                    currentPlaylist.songs[
-                        currentSongIndex
-                    ]
-                );
-
-            }
-
-        }
-
-    }
-);
 
 
 /* =========================================================
