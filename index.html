@@ -327,6 +327,86 @@ img{
 }
 
 /* =========================================================
+   SEARCH BAR
+========================================================= */
+
+.search-container{
+    position:relative;
+    margin:15px 0;
+    width:100%;
+    max-width:400px;
+}
+
+.search-input{
+    width:100%;
+    padding:12px 40px 12px 40px;
+    border-radius:20px;
+    border:0;
+    background:#242424;
+    color:#fff;
+    font-size:13px;
+    outline:none;
+    transition:all .2s;
+}
+
+.search-input:focus{
+    background:#282828;
+    box-shadow:0 0 0 2px var(--green);
+}
+
+.search-input::placeholder{
+    color:#888;
+}
+
+.search-icon{
+    position:absolute;
+    left:15px;
+    top:50%;
+    transform:translateY(-50%);
+    width:16px;
+    height:16px;
+    fill:#888;
+    pointer-events:none;
+}
+
+.search-clear{
+    position:absolute;
+    right:12px;
+    top:50%;
+    transform:translateY(-50%);
+    width:20px;
+    height:20px;
+    border-radius:50%;
+    background:#444;
+    color:#fff;
+    font-size:12px;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+}
+
+.search-clear.visible{
+    display:flex;
+}
+
+.search-clear:hover{
+    background:#555;
+}
+
+.no-results{
+    color:var(--grey);
+    text-align:center;
+    padding:40px 20px;
+    font-size:13px;
+    display:none;
+}
+
+.no-results.visible{
+    display:block;
+}
+
+/* =========================================================
    PLAYLIST GRID
 ========================================================= */
 
@@ -868,6 +948,10 @@ input[type="range"]::-webkit-slider-thumb{
     .playlist-actions{
         justify-content:center;
         flex-wrap:wrap;
+    }
+
+    .search-container{
+        max-width:100%;
     }
 
     .player{
@@ -1433,15 +1517,6 @@ let queuePosition = -1;
 let shuffle = false;
 let repeat = "off";
 
-/*
-    NOUVEAU :
-
-    Si true :
-    à chaque fin de musique, Spotity choisit
-    automatiquement un morceau aléatoire.
-
-    Cette option est indépendante du bouton Shuffle.
-*/
 let autoRandom = false;
 
 let currentObjectURL = null;
@@ -2602,7 +2677,36 @@ function openPlaylist(id){
 
             </div>
 
-            <div class="song-list">
+            <div class="search-container">
+
+                <svg class="search-icon" viewBox="0 0 24 24">
+                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+
+                <input
+                    class="search-input"
+                    id="playlist-search"
+                    type="text"
+                    placeholder="Rechercher dans la playlist..."
+                    autocomplete="off">
+
+                <button
+                    class="search-clear"
+                    id="search-clear">
+                    ✕
+                </button>
+
+            </div>
+
+            <div
+                class="no-results"
+                id="no-results">
+
+                Aucun titre trouvé.
+
+            </div>
+
+            <div class="song-list" id="playlist-songs">
 
                 ${
                     playlist.songs.length === 0
@@ -2669,7 +2773,167 @@ function openPlaylist(id){
         );
 
 
-    view
+    // Recherche dans la playlist
+    const searchInput =
+        document.getElementById(
+            "playlist-search"
+        );
+
+    const searchClear =
+        document.getElementById(
+            "search-clear"
+        );
+
+    const noResults =
+        document.getElementById(
+            "no-results"
+        );
+
+    const songListContainer =
+        document.getElementById(
+            "playlist-songs"
+        );
+
+
+    searchInput.addEventListener(
+        "input",
+        () => {
+
+            const query =
+                searchInput.value
+                    .toLowerCase()
+                    .trim();
+
+
+            if(query){
+
+                searchClear.classList.add(
+                    "visible"
+                );
+
+            }else{
+
+                searchClear.classList.remove(
+                    "visible"
+                );
+
+            }
+
+
+            const filteredSongs =
+                playlist.songs
+                .map(
+                    (song,index) => ({
+                        song,
+                        index
+                    })
+                )
+                .filter(
+                    ({song}) =>
+                        song.title
+                            .toLowerCase()
+                            .includes(query) ||
+                        (song.artist || "")
+                            .toLowerCase()
+                            .includes(query)
+                );
+
+
+            if(
+                filteredSongs.length === 0 &&
+                query
+            ){
+
+                songListContainer.innerHTML = "";
+
+                noResults.classList.add(
+                    "visible"
+                );
+
+            }else{
+
+                noResults.classList.remove(
+                    "visible"
+                );
+
+
+                songListContainer.innerHTML =
+                    filteredSongs
+                    .map(
+                        ({song,index}) =>
+                            songHTML(
+                                song,
+                                index
+                            )
+                    )
+                    .join("");
+
+
+                attachSongListeners(
+                    songListContainer,
+                    playlist
+                );
+
+            }
+
+        }
+    );
+
+
+    searchClear.addEventListener(
+        "click",
+        () => {
+
+            searchInput.value = "";
+
+            searchClear.classList.remove(
+                "visible"
+            );
+
+            noResults.classList.remove(
+                "visible"
+            );
+
+
+            songListContainer.innerHTML =
+                playlist.songs
+                .map(
+                    (song,index) =>
+                        songHTML(
+                            song,
+                            index
+                        )
+                )
+                .join("");
+
+
+            attachSongListeners(
+                songListContainer,
+                playlist
+            );
+
+        }
+    );
+
+
+    attachSongListeners(
+        songListContainer,
+        playlist
+    );
+
+}
+
+
+/* =========================================================
+   ATTACH SONG LISTENERS
+========================================================= */
+
+function attachSongListeners(
+    container,
+    playlist
+){
+
+    container
         .querySelectorAll(
             ".song"
         )
@@ -2704,7 +2968,7 @@ function openPlaylist(id){
         );
 
 
-    view
+    container
         .querySelectorAll(
             ".song-heart"
         )
@@ -2920,16 +3184,8 @@ function playPlaylist(id){
 
 
 /* =========================================================
-   NOUVEAU : MORCEAU ALEATOIRE
+   MORCEAU ALEATOIRE
 ========================================================= */
-
-/*
-    Cette fonction choisit un morceau complètement
-    aléatoire dans la playlist.
-
-    Elle évite le morceau actuellement joué lorsqu'il
-    y a au moins 2 morceaux.
-*/
 
 function playRandomSong(){
 
@@ -2978,12 +3234,6 @@ function playRandomSong(){
     );
 
 
-    /*
-        On reconstruit la file autour du nouveau
-        morceau afin que les commandes suivant/précédent
-        continuent de fonctionner normalement.
-    */
-
     buildPlayQueue(
         currentPlaylist,
         randomIndex
@@ -3017,13 +3267,6 @@ async function preloadNextSong(){
 
     }
 
-
-    /*
-        En mode aléatoire automatique, le prochain morceau
-        n'est pas forcément celui de la file normale.
-        On ne précharge donc pas ici pour éviter de précharger
-        le mauvais morceau.
-    */
 
     if(autoRandom){
 
@@ -3520,12 +3763,6 @@ function nextSong(){
     }
 
 
-    /*
-        Si l'aléatoire automatique est activé,
-        le bouton suivant fait également un choix
-        aléatoire.
-    */
-
     if(autoRandom){
 
         playRandomSong();
@@ -3686,11 +3923,6 @@ audio.addEventListener(
     "ended",
     () => {
 
-        /*
-            PRIORITÉ :
-            Repeat 1 = rejouer le même morceau.
-        */
-
         if(
             repeat === "one"
         ){
@@ -3708,18 +3940,6 @@ audio.addEventListener(
 
         }
 
-
-        /*
-            NOUVEAU :
-            Si "Aléatoire auto" est activé,
-            on choisit TOUJOURS un nouveau morceau.
-
-            Cela fonctionne même lorsque le morceau terminé
-            était le dernier de la playlist.
-
-            repeat === "all" n'est donc même pas nécessaire
-            pour que la playlist continue.
-        */
 
         if(autoRandom){
 
@@ -5204,7 +5424,7 @@ document
 
 
 /* =========================================================
-   NOUVEAU : BOUTON ALEATOIRE AUTOMATIQUE
+   BOUTON ALEATOIRE AUTOMATIQUE
 ========================================================= */
 
 autoRandomBtn.addEventListener(
@@ -5215,34 +5435,17 @@ autoRandomBtn.addEventListener(
             !autoRandom;
 
 
-        /*
-            Vert = activé
-            Gris = désactivé
-        */
-
         autoRandomBtn.classList.toggle(
             "active",
             autoRandom
         );
 
 
-        /*
-            On change également le titre du bouton
-            pour indiquer clairement son état.
-        */
-
         autoRandomBtn.title =
             autoRandom
             ? "Aléatoire automatique activé"
             : "Aléatoire automatique désactivé";
 
-
-        /*
-            En mode aléatoire automatique,
-            on annule le préchargement classique
-            car le prochain morceau sera choisi
-            au dernier moment.
-        */
 
         if(autoRandom){
 
@@ -5653,10 +5856,6 @@ async function init(){
 
         renderLibrary();
 
-
-        /*
-            Etat initial du bouton.
-        */
 
         autoRandomBtn.classList.toggle(
             "active",
