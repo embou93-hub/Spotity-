@@ -1014,11 +1014,6 @@ input[type="range"]::-webkit-slider-thumb{
         display:none;
     }
 
-    /*
-        Le nouveau bouton aléatoire automatique
-        reste visible sur mobile.
-    */
-
     #auto-random-btn{
         display:flex;
     }
@@ -3415,7 +3410,7 @@ function clearNextPreload(){
 
 
 /* =========================================================
-   JOUER MUSIQUE
+   JOUER MUSIQUE - CORRIGÉ POUR iOS
 ========================================================= */
 
 async function playSong(
@@ -3533,14 +3528,48 @@ async function playSong(
         );
 
 
+        // Lecture avec gestion iOS améliorée
         try{
 
-            await audio.play();
+            const playPromise =
+                audio.play();
+
+            if(
+                playPromise !== undefined
+            ){
+
+                playPromise.catch(
+                    error => {
+
+                        console.warn(
+                            "Lecture automatique bloquée:",
+                            error
+                        );
+
+
+                        // Réessayer après un court délai
+                        setTimeout(
+                            () => {
+
+                                audio
+                                    .play()
+                                    .catch(
+                                        console.error
+                                    );
+
+                            },
+                            100
+                        );
+
+                    }
+                );
+
+            }
 
         }catch(error){
 
             console.warn(
-                "Lecture automatique bloquée:",
+                "Erreur de lecture:",
                 error
             );
 
@@ -3748,7 +3777,7 @@ audio.addEventListener(
 
 
 /* =========================================================
-   NEXT
+   NEXT - CORRIGÉ POUR iOS
 ========================================================= */
 
 function nextSong(){
@@ -3916,7 +3945,7 @@ function previousSong(){
 
 
 /* =========================================================
-   FIN MUSIQUE
+   FIN MUSIQUE - CORRIGÉ POUR iOS
 ========================================================= */
 
 audio.addEventListener(
@@ -3957,7 +3986,7 @@ audio.addEventListener(
 
 
 /* =========================================================
-   MEDIA SESSION
+   MEDIA SESSION - CORRIGÉ POUR iOS
 ========================================================= */
 
 function setupMediaSession(
@@ -5835,7 +5864,7 @@ function escapeHTML(
 
 
 /* =========================================================
-   INITIALISATION
+   INITIALISATION - CORRIGÉ POUR iOS
 ========================================================= */
 
 async function init(){
@@ -5861,6 +5890,45 @@ async function init(){
             "active",
             autoRandom
         );
+
+
+        // Configuration spécifique pour iOS
+        if(
+            'mediaSession' in navigator
+        ){
+
+            // Précharger les gestionnaires au démarrage
+            setupMediaSession({
+                title: "Spotity",
+                artist: "Prêt à jouer",
+                cover: defaultCover("Spotity")
+            });
+
+        }
+
+
+        // Activer la lecture en arrière-plan sur iOS
+        document.addEventListener(
+            'touchstart',
+            () => {
+
+                if(
+                    audio.paused &&
+                    audio.src
+                ){
+
+                    audio
+                        .play()
+                        .catch(
+                            () => {}
+                        );
+
+                }
+
+            },
+            { once: true }
+        );
+
 
     }catch(error){
 
