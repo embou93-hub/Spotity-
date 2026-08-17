@@ -446,6 +446,7 @@ img{
 .playlist-actions{
     display:flex;
     gap:8px;
+    flex-wrap:wrap;
 }
 
 .green-btn{
@@ -922,6 +923,15 @@ input[type="range"]::-webkit-slider-thumb{
     .song-duration{
         display:none;
     }
+
+    /*
+        Le nouveau bouton aléatoire automatique
+        reste visible sur mobile.
+    */
+
+    #auto-random-btn{
+        display:flex;
+    }
 }
 
 /* =========================================================
@@ -1213,10 +1223,22 @@ input[type="range"]::-webkit-slider-thumb{
 
             <button
                 class="control"
-                id="shuffle-btn">
+                id="shuffle-btn"
+                title="Lecture aléatoire">
 
                 <svg viewBox="0 0 24 24">
                     <path d="M16 3h5v5h-2V6.41l-4.29 4.3-1.42-1.42L17.59 5H16V3zM4 6h3l10 12h4v2h-5L6 8H4V6zm0 12h3.59l2.7-3.41 1.42 1.42L8.56 20H4v-2z"/>
+                </svg>
+
+            </button>
+
+            <button
+                class="control"
+                id="auto-random-btn"
+                title="Choisir automatiquement une musique aléatoire">
+
+                <svg viewBox="0 0 24 24">
+                    <path d="M17 3h4v4h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H17V3zM4 6h3.2l3.3 3.3-1.42 1.42L6.38 8H4V6zm0 10h2.38l8.33-8.33 1.42 1.42L7.2 18H4v-2zm10.3-4.3l1.42-1.42L19 14.56V13h2v5h-5v-2h1.56l-3.26-3.3z"/>
                 </svg>
 
             </button>
@@ -1399,29 +1421,25 @@ let favorites = [];
 let currentPlaylist = null;
 let currentSongIndex = -1;
 
-/*
-    File de lecture réelle.
-
-    En mode normal :
-    [0,1,2,3,4]
-
-    En shuffle :
-    [3,0,4,1,2]
-
-    Cela permet d'avoir un vrai ordre aléatoire
-    et d'éviter de rejouer plusieurs fois le même morceau.
-*/
 let playQueue = [];
 let queuePosition = -1;
 
 let shuffle = false;
 let repeat = "off";
 
+/*
+    NOUVEAU :
+
+    Si true :
+    à chaque fin de musique, Spotity choisit
+    automatiquement un morceau aléatoire.
+
+    Cette option est indépendante du bouton Shuffle.
+*/
+let autoRandom = false;
+
 let currentObjectURL = null;
 
-/*
-    URL du prochain morceau préchargé.
-*/
 let nextPreloadURL = null;
 let nextPreloadSongId = null;
 
@@ -1461,6 +1479,9 @@ const duration =
 
 const volume =
     document.getElementById("volume");
+
+const autoRandomBtn =
+    document.getElementById("auto-random-btn");
 
 
 /* =========================================================
@@ -1981,19 +2002,6 @@ async function extractMP3Cover(file){
 
                 if(cover){
 
-                    /*
-                        IMPORTANT :
-                        Avant cette version,
-                        parseAPIC retournait un blob:
-                        URL.createObjectURL(...)
-
-                        Ce type d'URL disparaît après
-                        fermeture/rechargement.
-
-                        Maintenant on retourne directement
-                        une Data URL persistante.
-                    */
-
                     return cover;
 
                 }
@@ -2204,12 +2212,6 @@ function parseAPIC(bytes){
                         "image/jpeg"
                 }
             );
-
-        /*
-            CORRECTION IMPORTANTE :
-            on transforme immédiatement le Blob
-            en Data URL persistante.
-        */
 
         return blobToDataURL(
             blob
@@ -2833,16 +2835,6 @@ function buildPlayQueue(
     }
 
 
-    /*
-        Vrai shuffle :
-
-        Le morceau demandé est toujours
-        le premier de la file.
-
-        Tous les autres morceaux sont
-        mélangés une seule fois.
-    */
-
     const others =
         Array.from(
             {length},
@@ -2922,6 +2914,86 @@ function playPlaylist(id){
 
 
 /* =========================================================
+   NOUVEAU : MORCEAU ALEATOIRE
+========================================================= */
+
+/*
+    Cette fonction choisit un morceau complètement
+    aléatoire dans la playlist.
+
+    Elle évite le morceau actuellement joué lorsqu'il
+    y a au moins 2 morceaux.
+*/
+
+function playRandomSong(){
+
+    if(
+        !currentPlaylist ||
+        !currentPlaylist.songs.length
+    ){
+
+        return;
+
+    }
+
+
+    const songs =
+        currentPlaylist.songs;
+
+
+    if(
+        songs.length === 1
+    ){
+
+        playSong(
+            currentPlaylist,
+            0,
+            true
+        );
+
+        return;
+
+    }
+
+
+    let randomIndex;
+
+
+    do{
+
+        randomIndex =
+            Math.floor(
+                Math.random() *
+                songs.length
+            );
+
+    }while(
+        randomIndex === currentSongIndex
+    );
+
+
+    /*
+        On reconstruit la file autour du nouveau
+        morceau afin que les commandes suivant/précédent
+        continuent de fonctionner normalement.
+    */
+
+    buildPlayQueue(
+        currentPlaylist,
+        randomIndex
+    );
+
+
+    playSong(
+        currentPlaylist,
+        randomIndex,
+        true
+    );
+
+}
+
+
+/* =========================================================
    PRELOAD SUIVANT
 ========================================================= */
 
@@ -2934,6 +3006,20 @@ async function preloadNextSong(){
         !currentPlaylist ||
         !playQueue.length
     ){
+
+        return;
+
+    }
+
+
+    /*
+        En mode aléatoire automatique, le prochain morceau
+        n'est pas forcément celui de la file normale.
+        On ne précharge donc pas ici pour éviter de précharger
+        le mauvais morceau.
+    */
+
+    if(autoRandom){
 
         return;
 
@@ -2956,10 +3042,6 @@ async function preloadNextSong(){
             return;
 
         }
-
-        /*
-            En repeat all, on prépare le premier.
-        */
 
     }
 
@@ -3015,13 +3097,6 @@ async function preloadNextSong(){
         nextPreloadSongId =
             song.id;
 
-
-        /*
-            Audio séparé uniquement pour le
-            préchargement.
-
-            Il ne joue pas.
-        */
 
         preloadAudio =
             new Audio();
@@ -3114,14 +3189,6 @@ async function playSong(
         playlist;
 
 
-    /*
-        Si on clique directement sur un morceau,
-        on reconstruit la file.
-
-        Si nextSong() appelle playSong(),
-        on conserve la file existante.
-    */
-
     if(
         rebuildQueue ||
         !playQueue.length
@@ -3178,10 +3245,6 @@ async function playSong(
         clearNextPreload();
 
 
-        /*
-            Si l'URL actuelle existe, on la libère.
-        */
-
         if(
             currentObjectURL
         ){
@@ -3234,10 +3297,6 @@ async function playSong(
 
         }
 
-
-        /*
-            On prépare immédiatement le suivant.
-        */
 
         preloadNextSong();
 
@@ -3455,6 +3514,21 @@ function nextSong(){
     }
 
 
+    /*
+        Si l'aléatoire automatique est activé,
+        le bouton suivant fait également un choix
+        aléatoire.
+    */
+
+    if(autoRandom){
+
+        playRandomSong();
+
+        return;
+
+    }
+
+
     if(
         !playQueue.length
     ){
@@ -3607,8 +3681,8 @@ audio.addEventListener(
     () => {
 
         /*
-            Pas de setTimeout.
-            On enchaîne directement.
+            PRIORITÉ :
+            Repeat 1 = rejouer le même morceau.
         */
 
         if(
@@ -3623,6 +3697,27 @@ audio.addEventListener(
                 .catch(
                     console.error
                 );
+
+            return;
+
+        }
+
+
+        /*
+            NOUVEAU :
+            Si "Aléatoire auto" est activé,
+            on choisit TOUJOURS un nouveau morceau.
+
+            Cela fonctionne même lorsque le morceau terminé
+            était le dernier de la playlist.
+
+            repeat === "all" n'est donc même pas nécessaire
+            pour que la playlist continue.
+        */
+
+        if(autoRandom){
+
+            playRandomSong();
 
             return;
 
@@ -3734,10 +3829,6 @@ function setupMediaSession(
         );
 
 
-        /*
-            Avance de 10 secondes.
-        */
-
         navigator.mediaSession.setActionHandler(
             "seekforward",
             details => {
@@ -3759,10 +3850,6 @@ function setupMediaSession(
         );
 
 
-        /*
-            Recul de 10 secondes.
-        */
-
         navigator.mediaSession.setActionHandler(
             "seekbackward",
             details => {
@@ -3783,13 +3870,6 @@ function setupMediaSession(
             }
         );
 
-
-        /*
-            IMPORTANT :
-            C'est cette action qui permet au petit
-            lecteur iPhone de déplacer directement
-            la barre de progression.
-        */
 
         try{
 
@@ -3906,10 +3986,6 @@ function updateMediaPosition(){
 
 }
 
-
-/* =========================================================
-   MEDIA SESSION POSITION UPDATE
-========================================================= */
 
 audio.addEventListener(
     "timeupdate",
@@ -4452,13 +4528,6 @@ function importAudio(){
                     null;
 
 
-                /*
-                    Extraction de la pochette.
-
-                    Elle devient maintenant une DATA URL,
-                    donc elle est persistante.
-                */
-
                 cover =
                     await extractMP3Cover(
                         file
@@ -4483,12 +4552,9 @@ function importAudio(){
 
                 const song = {
 
-                    id:
-
-                        id,
+                    id:id,
 
                     title:
-
                         file.name
                             .replace(
                                 /\.[^/.]+$/,
@@ -4496,28 +4562,19 @@ function importAudio(){
                             ),
 
                     artist:
-
                         "Fichier local",
 
                     duration:
-
                         "0:00",
 
                     cover:
-
                         cover,
 
                     playlistId:
-
                         playlist.id
 
                 };
 
-
-                /*
-                    LE FICHIER AUDIO ORIGINAL EST
-                    STOCKÉ DANS INDEXEDDB.
-                */
 
                 await dbPut(
                     STORE_SONGS,
@@ -5122,14 +5179,6 @@ document
                 );
 
 
-            /*
-                Si une chanson est déjà en cours,
-                on reconstruit immédiatement la file
-                autour de cette chanson.
-
-                La musique actuelle ne change pas.
-            */
-
             if(
                 currentPlaylist &&
                 currentSongIndex >= 0
@@ -5147,6 +5196,65 @@ document
         }
     );
 
+
+/* =========================================================
+   NOUVEAU : BOUTON ALEATOIRE AUTOMATIQUE
+========================================================= */
+
+autoRandomBtn.addEventListener(
+    "click",
+    () => {
+
+        autoRandom =
+            !autoRandom;
+
+
+        /*
+            Vert = activé
+            Gris = désactivé
+        */
+
+        autoRandomBtn.classList.toggle(
+            "active",
+            autoRandom
+        );
+
+
+        /*
+            On change également le titre du bouton
+            pour indiquer clairement son état.
+        */
+
+        autoRandomBtn.title =
+            autoRandom
+            ? "Aléatoire automatique activé"
+            : "Aléatoire automatique désactivé";
+
+
+        /*
+            En mode aléatoire automatique,
+            on annule le préchargement classique
+            car le prochain morceau sera choisi
+            au dernier moment.
+        */
+
+        if(autoRandom){
+
+            clearNextPreload();
+
+        }else{
+
+            preloadNextSong();
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   REPEAT
+========================================================= */
 
 document
     .getElementById(
@@ -5363,11 +5471,6 @@ audio.addEventListener(
     "loadeddata",
     () => {
 
-        /*
-            On tente de préparer le morceau suivant
-            dès que le morceau actuel est réellement chargé.
-        */
-
         preloadNextSong();
 
     }
@@ -5540,22 +5643,19 @@ async function init(){
         await loadPlaylists();
 
 
-        /*
-            Migration automatique des anciennes pochettes
-            blob: éventuelles.
-
-            Les anciennes pochettes blob ne peuvent pas être
-            récupérées après fermeture si elles avaient été
-            sauvegardées comme URL blob.
-
-            Les nouvelles importations utilisent uniquement
-            des Data URL persistantes.
-        */
-
-
         renderPlaylists();
 
         renderLibrary();
+
+
+        /*
+            Etat initial du bouton.
+        */
+
+        autoRandomBtn.classList.toggle(
+            "active",
+            autoRandom
+        );
 
     }catch(error){
 
@@ -5587,11 +5687,6 @@ document.addEventListener(
             "visible"
         ){
 
-            /*
-                On resynchronise Media Session
-                lorsque l'application revient au premier plan.
-            */
-
             if(
                 currentPlaylist &&
                 currentPlaylist.songs[
@@ -5620,14 +5715,6 @@ document.addEventListener(
 window.addEventListener(
     "beforeunload",
     () => {
-
-        /*
-            IMPORTANT :
-            on ne supprime PAS les fichiers d'IndexedDB.
-
-            On libère seulement les URL temporaires
-            utilisées pour la lecture actuelle.
-        */
 
         clearNextPreload();
 
